@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!-- -->
+<launch>
+  <arg name = "record" default = "false"/>
+  <!--Launch the visualization-->
+  <node pkg="rviz" type="rviz" name="rviz" args="--display-config $(find free_space_detection)/config/rviz.rviz" required="true"/>
+
+  <!--Launch the visualization-->
+  <node pkg="free_space_detection" type="free_space_detection_node" name="free_space_detection" required="true"/>
+
+  <!--Launch the visualization-->
+  <node pkg="free_space_detection" type="device_frame_publisher_node" name="device_frame_publisher" required="true"/>
+
+  <!--Launch the recorder-->
+  <node name="rosbag_record" pkg="rosbag" type="record" output="screen" if="$(arg record)" args=" /ld_rms/scan0 /ld_rms/scan1  /ld_rms/scan2 /ld_rms/scan3 /lms151_D_scan /lms151_E_scan /camera/image_color -o $(find free_space_detection)/laserData/"/>
+
+  <!--Launch the robot model-->
+  <include file="$(find free_space_detection)/launch/robotmodel.launch"/>
+</launch>

@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!-- -->
+<launch>
+  <arg name="lms151_E" default="true" />
+  <arg name="lms151_D" default="true" />
+  <arg name="ld_mrs" default="true" />
+  <arg name="zebra2" default="true" />
+  <arg name="VLP16" default="true" />
+  <!--Launch the drivers-->
+  <node name="lms151_E" pkg="lms1xx" type="lms1xx" required="true" output="screen" if="$(arg lms151_E)">
+      <param name="host" value="192.168.0.134"/>
+      <param name="frame_id" value="lms151_E"/>
+      <remap from="scan" to="lms151_E_scan"/>
+  </node>
+
+  <node name="lms151_D" pkg="lms1xx" type="lms1xx" required="true" output="screen" if="$(arg lms151_D)">
+      <param name="host" value="192.168.0.231"/>
+      <param name="frame_id" value="lms151_D"/>
+      <remap from="scan" to="lms151_D_scan"/>
+  </node>
+
+  <node pkg="sick_ldmrs" type="sickldmrs.py" name="ld_rms" required="true" output="screen" if="$(arg ld_mrs)">
+      <param name="host" value="192.168.0.244"/>
+      <param name="port" value="12002"/>
+  </node>
+
+  <include file="$(find pointgrey_camera_driver)/launch/camera.launch" if="$(arg zebra2)"/>
+
+  <include file="$(find velodyne_pointcloud)/launch/VLP16_points.launch" if="$(arg VLP16)"/>
+</launch>

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- -->
+<launch>
+  <!-- upload urdf -->
+  <param name="ATLASCAR2" textfile="$(find free_space_detection)/urdf/atlas2.urdf" />
+
+  <!-- robot state publisher -->
+  <node pkg="robot_state_publisher" type="state_publisher" name="robot_state_publisher" />
+
+  <!-- joint state publisher with gui -->
+  <param name="use_gui" value="true" />
+  <node pkg="joint_state_publisher" type="joint_state_publisher" name="joint_state_publisher"/>
+</launch>

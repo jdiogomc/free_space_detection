@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- -->
+<launch>
+  <arg name = "record" default = "true"/>
+  <!--Launch the drivers-->
+  <include file="$(find free_space_detection)/launch/drivers.launch">
+  <arg name="VLP16" value="false" />
+  <arg name="ld_mrs" value="false" />
+  </include>
+
+  <!--Launch the visualizer-->
+  <node pkg="rviz" type="rviz" name="rviz" args="--display-config $(find free_space_detection)/config/visao.rviz" required="true"/>
+
+  <!--Launch the frame publisher-->
+  <node pkg="free_space_detection" type="device_frame_publisher_node" name="device_frame_publisher" required="true"/>
+</launch>

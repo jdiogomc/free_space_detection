@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!-- -->
+<launch>
+  <arg name = "record" default = "true"/>
+  <!--Launch the drivers-->
+  <include file="$(find free_space_detection)/launch/drivers.launch">
+    <arg name="VLP16" value="false" />
+    <arg name="ld_mrs" value="false" />
+    <arg name="lms151_E" value="false" />
+    <arg name="lms151_D" value="false" />
+    <arg name="zebra2" value="true" />
+  </include>
+
+  <!--Launch the recorder-->
+  <node name="rosbag_record" pkg="rosbag" type="record" output="screen" if="$(arg record)" args=" /ld_rms/scan0 /ld_rms/scan1  /ld_rms/scan2 /ld_rms/scan3 /lms151_D_scan /lms151_E_scan  /camera/image_color -o $(find free_space_detection)/laserData/"/>
+
+  <!--Launch the visualizer-->
+  <node pkg="rviz" type="rviz" name="rviz" args="--display-config $(find free_space_detection)/config/rviz_2.rviz" required="true"/>
+
+  <!--Launch the robot model-->
+  <include file="$(find free_space_detection)/launch/robotmodel.launch"/>
+
+  <!--Launch the frame publisher-->
+  <node pkg="free_space_detection" type="device_frame_publisher_node" name="device_frame_publisher" required="true"/>
+</launch>
