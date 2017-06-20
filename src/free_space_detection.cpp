@@ -27,16 +27,16 @@
 #include "lidar_segmentation/lidar_segmentation.h"
 //#include "lidar_segmentation/visualization_rviz.h"
 #include <colormap/colormap.h>
-/*---CGAL Includes---*/
-//#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
-//#include <CGAL/convex_hull_2.h>
-//#include <CGAL/Polygon_2.h>
-/*---Boost filesystem to get parent directory---*/
-#include "boost/filesystem.hpp"
-#include <boost/bind.hpp>
-#include "boost/filesystem/operations.hpp"
-#include "boost/filesystem/path.hpp"
-#include "boost/progress.hpp"
+///*---CGAL Includes---*/
+////#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
+////#include <CGAL/convex_hull_2.h>
+////#include <CGAL/Polygon_2.h>
+///*---Boost filesystem to get parent directory---*/
+//#include "boost/filesystem.hpp"
+//#include <boost/bind.hpp>
+//#include "boost/filesystem/operations.hpp"
+//#include "boost/filesystem/path.hpp"
+//#include "boost/progress.hpp"
 
 #include "calibration_gui/sick_ldmrs.h"
 #include "calibration_gui/common_functions.h"
@@ -45,12 +45,24 @@
 typedef geometry_msgs::PolygonStamped polygonS;
 typedef boost::shared_ptr<polygonS> polygonSPtr;
 
-typedef sensor_msgs::PointCloud2::Ptr pclPtr;
-typedef sensor_msgs::PointCloud2 PCL;
+//typedef sensor_msgs::PointCloud2::Ptr pclPtr;
+typedef sensor_msgs::PointCloud2 PCL2;
+typedef boost::shared_ptr< PCL2 > pcl2Ptr;
+
+typedef pcl::PointCloud<pcl::PointXYZ> PCL;
+typedef boost::shared_ptr< PCL > pclPtr;
 
 using namespace ros;
 using namespace std;
 using namespace velodyne_rawdata;
+
+int sum(vector<int> array){
+  int sum = 0;
+  for(int i = 0; i<array.size();i++){
+    sum+=array[i];
+  }
+  return sum;
+}
 
 namespace lidar_data_analise
 {
@@ -59,23 +71,21 @@ class laserDataAnalise
 {
 
 public:
-  laserDataAnalise(string topicName, double rotations) {
+  laserDataAnalise(string topicName) {
 
     this->topicName = topicName;
-    rotation = rotations;
     /*----Susbcribe LaserData Topic----*/
     sub = n.subscribe(topicName,1000, &laserDataAnalise::laserDataTreatment,this);
     ROS_INFO("Topic %s subscribed!",topicName.c_str());
 
     clustersPub = np.advertise<visualization_msgs::MarkerArray>("simple_clustering",1000);
-    pclPub = np.advertise<PCL>(topicName+"_PCL",1000);
+    pclPub = np.advertise<PCL2>(topicName+"_PCL",1000);
     polygonPub = np.advertise<polygonS>(topicName+"_polygon",1000);
   }
 
-   void convertToXYZ(sensor_msgs::LaserScan scan, vector<PointPtr>& points)
+   void convertToXYZ(sensor_msgs::LaserScan scan, vector<PointPtr>& points, double rot)
     {
       int s=scan.ranges.size();
-      double rot = rotation;
 
       for(int n=0; n<s; n++)
       {
@@ -198,14 +208,14 @@ public:
      return cleanClusters;
    }
 
-   void scanToPcl(sensor_msgs::LaserScan scan, pclPtr pclOut)
+   void scanToPcl(sensor_msgs::LaserScan scan, pcl2Ptr pclOut)
    {
      laser_geometry::LaserProjection projector;
      projector.transformLaserScanToPointCloud(scan.header.frame_id, scan, *pclOut, tf_Listener);
    }
 
 
-   static polygonSPtr getScanPolygon(pclPtr scan)
+   static polygonSPtr getScanPolygon(pcl2Ptr scan)
    {
      polygonSPtr polygon(new(polygonS));
      pcl::PointCloud<pcl::PointXYZ> cloud;
@@ -227,7 +237,7 @@ public:
        point.y = pointPcl.y;
        point.z = pointPcl.z;
        polygon->polygon.points.push_back(point);
-     } 
+     }
 
      return polygon;
    }
@@ -236,8 +246,8 @@ public:
    {
      scan.header.stamp = ros::Time::now();
 //     vector<PointPtr> laserPoints;
-//     convertToXYZ(scan, laserPoints);
-     pclPtr scanPcl(new(PCL));
+//     convertToXYZ(scan, laserPoints, 0);
+     pcl2Ptr scanPcl(new(PCL2));
      scanToPcl(scan, scanPcl);
 
      polygonSPtr polygon = getScanPolygon(scanPcl);
@@ -290,36 +300,46 @@ private:
 class pointClouldFusion
 {
 public:
-  pointClouldFusion(vector<string> topicName) {
+  bool newData;
+  pointClouldFusion(vector<string> topicName, vector<string> frame_Ids) {
+    nPcl = topicName.size();
+    ROS_INFO("%d Topics to subscribe!",nPcl);
+    frame_IDs = frame_Ids;
+    newData = false;
+//    received.assign(6,0);
+//    pcl2Ptr newPcl(new(PCL));
+//    allPcl.assign(nPcl,newPcl);
     for(int i = 0; i<topicName.size(); i++){
       Subscriber sub;
       sub_pc.push_back(sub);
-      sub_pc[i] = n.subscribe(topicName[i],1000, &pointClouldFusion::getPointCloud,this);
+      sub_pc[i] = n.subscribe(topicName[i],10, &pointClouldFusion::getPointCloud,this);
       ROS_INFO("Topic %s subscribed!",topicName[i].c_str());
-      pclPtr newPcl;
+      pcl2Ptr newPcl(new(PCL2));;
       allPcl.push_back(newPcl);
+      received.push_back(0);
     }
   }
 
-void getPointCloud(PCL myPcl){
-  static int ind = 0;
-  allPcl[ind] = pclPtr(&myPcl);
-  ind ++;
-  if(ind>3) ind = 0;
+void getPointCloud(const PCL2::ConstPtr myPcl){
+  string frame_id = myPcl->header.frame_id;
+  if(newData == false){
+    for(int i = 0; i<nPcl;i++){
+      if(frame_IDs[i] == frame_id && received[i] != 1){
+        allPcl[i] = boost::const_pointer_cast< PCL2 >(myPcl);
+        received[i] = 1;
+        ROS_INFO("%s",frame_id.c_str());
+      }
+    }
+  }
+  if(sum(received) == nPcl){
+    fill(received.begin(), received.end(), 0);
+    newData = true;
+    ROS_INFO("New Set of data Ready");
+  }
 }
 
-pclPtr getAllPcl(void){
-  pclPtr PclPtr = allPcl[0];
-  PCL cPcl = *PclPtr;
-
-  for(int i = 1; i< allPcl.size(); i++){
-    PCL newPclOut;
-    PCL oldPcl = *allPcl[i];
-    pcl::concatenatePointCloud(oldPcl ,cPcl,newPclOut);
-    cPcl = newPclOut;
-  }
-
-  return pclPtr(&cPcl);
+vector< pcl2Ptr > getAllPcl(void){
+  return allPcl;
 }
 
 
@@ -328,138 +348,42 @@ private:
   tf::TransformListener tf_listener;
   vector<Subscriber> sub_pc;
 
-  vector<pclPtr> allPcl;
-};
-
-class velodyneDataHandle
-{
-public:
-  velodyneDataHandle() {
-
-    // subscribe to VelodyneScan packets
-    velodyne_scan_ =
-      node.subscribe("velodyne_points", 10,
-                     &velodyneDataHandle::processScan, this,
-                     ros::TransportHints().tcpNoDelay(true));
-
-    velodyne_pub = node.advertise<visualization_msgs::MarkerArray>( "BallDetection", 10000);
-    sphereCentroid_pub = node.advertise<geometry_msgs::PointStamped>("SphereCentroid",1000);
-  }
-
-//  void pcl2ToLaserPoints(sensor_msgs::PointCloud2::ConstPtr &pcl2, vector< vector<PointPtr> > &laserscan){
-//    vector<PointPtr> scanPtr;
-//    laserscan.assign(16, scanPtr);
-
-//    pcl::PointCloud<VPoint> pcl;
-//    pcl::fromROSMsg(*pcl2, pcl);
-
-//    for(int i = 0; i<pcl.size();i++){
-//      VPoint point = pcl.at(i);
-//      int ringNumber = point.ring;
-//      PointPtr pointXYZ;
-//      pointXYZ->x = point.x;
-//      pointXYZ->y = point.y;
-//      pointXYZ->z = point.z;
-
-//      laserscan[ringNumber].push_back(pointXYZ);
-//    }
-
-//  }
-
-  void getClusters(vector<PointPtr> laserPoints, vector<ClusterPtr> clusters_nn){
-    vector<PointPtr> points_filtered;
-    filterPoints(laserPoints,points_filtered,0.01,200.);
-
-    double threshold_nn = 0.20;
-    nnClustering( points_filtered, threshold_nn , clusters_nn);
-
-  }
-
-  void processScan(const sensor_msgs::PointCloud2::ConstPtr &scanMsg){
-    vector< vector<PointPtr> > laserscans;
-    //pcl2ToLaserPoints(scanMsg, laserscans);
-
-
-    vector<double> radius;
-    vector<LidarClustersPtr> circlePoints;
-    Point sphere;
-    vector<geometry_msgs::Point> center;
-    vector<LidarClustersPtr> clusters;
-
-    for(int i = 0; i<laserscans.size();i++){
-      vector<ClusterPtr> clusters_nn;
-      getClusters(laserscans[i], clusters_nn);
-
-      LidarClustersPtr cluster (new LidarClusters);
-      cluster->Clusters = clusters_nn;
-      clusters.push_back(cluster);
-
-      LidarClustersPtr circlePs (new LidarClusters);
-      vector<ClusterPtr> circleP;
-      double r;
-      r=find_circle(clusters_nn,circleP,i);
-      int num;
-      if(r!=0)
-        num++;
-
-      radius.push_back(r);
-      circlePs->Clusters = circleP;
-      circlePoints.push_back(circlePs);
-
-      //publish circle centroid
-
-      center.push_back(sphereCentroid.point);
-
-      int circlesNumb = 0;
-      if(i==laserscans.size()-1)
-      {
-        for(int j=0; j<laserscans.size(); j++)
-        {
-          if(radius[j]>0.001)
-            circlesNumb++;
-        }
-      }
-
-      if(i==laserscans.size()-1)
-      {
-        if(circlesNumb>1)
-        {
-          calculateSphereCentroid(center, sphereCentroid, radius);
-          sphere.x=sphereCentroid.point.x;
-          sphere.y=sphereCentroid.point.y;
-          sphere.z=sphereCentroid.point.z;
-        }
-        else
-        {
-          sphere.x=-100;
-          sphere.y=0;
-          sphere.z=0;
-        }
-        sphereCentroid.header.stamp = ros::Time::now();
-        sphereCentroid_pub.publish(sphereCentroid);
-      }
-    }
-    vector<ClusterPtr> linePoints;
-    //      Vizualize the Segmentation results
-
-    visualization_msgs::MarkerArray targets_markers;
-    targets_markers.markers = createTargetMarkers(clusters,circlePoints, sphere,radius);
-
-    velodyne_pub.publish(targets_markers);
-
-  }
-
-
-private:
-  Subscriber velodyne_scan_;
-  Publisher sphereCentroid_pub;
-  Publisher velodyne_pub;
-  NodeHandle node;
-  geometry_msgs::PointStamped sphereCentroid;
-
+  vector<pcl2Ptr> allPcl;
+  int nPcl;
+  vector<int> received;
+  vector<string> frame_IDs;
 };
 
 }
+
+
+void transformPCL(tf::TransformListener listener, string oriFrame, string destFrame, pclPtr pclIn){
+
+  tf::StampedTransform transform;
+
+  try{
+    listener.waitForTransform(oriFrame,destFrame,ros::Time(0),ros::Duration(0.1));
+    listener.lookupTransform(oriFrame,destFrame,ros::Time(0),transform);
+  }
+  catch (tf::TransformException ex){
+    ROS_ERROR("%s",ex.what());
+  }
+
+  Eigen::Affine3f transform_2 = Eigen::Affine3f::Identity();
+
+  // Define a translation of 2.5 meters on the x axis.
+  transform_2.translation() << 2.5, 0.0, 0.0;
+
+  // The same rotation matrix as before; theta radians arround Z axis
+  transform_2.rotate (Eigen::AngleAxisf (M_PI/4, Eigen::Vector3f::UnitZ()));
+
+  // Executing the transformation
+  PCL::Ptr transformed_cloud (new PCL ());
+  PCL::Ptr cloud (new PCL ());
+  pcl::transformPointCloud (*pclIn, *transformed_cloud, transform_2);
+
+}
+
 
 using namespace lidar_data_analise;
 
@@ -468,17 +392,17 @@ int main(int argc, char **argv)
   ros::init(argc, argv, "free_space_detection");
   Publisher polygonPub;
   NodeHandle np;
+  tf::TransformListener listener;
 
-  laserDataAnalise lms151EAnalise("/lms151_D_scan",0);
-  laserDataAnalise lms151DAnalise("/lms151_E_scan",0);
-  laserDataAnalise ld_mrsAnalise1("/ld_rms/scan0",0);
-  laserDataAnalise ld_mrsAnalise2("/ld_rms/scan1",0);
-  laserDataAnalise ld_mrsAnalise3("/ld_rms/scan2",0);
-  laserDataAnalise ld_mrsAnalise4("/ld_rms/scan3",0);
-
-  Rate  loopRate(50);
+  laserDataAnalise lms151EAnalise("/lms151_D_scan");
+  laserDataAnalise lms151DAnalise("/lms151_E_scan");
+  laserDataAnalise ld_mrsAnalise1("/ld_rms/scan0");
+  laserDataAnalise ld_mrsAnalise2("/ld_rms/scan1");
+  laserDataAnalise ld_mrsAnalise3("/ld_rms/scan2");
+  laserDataAnalise ld_mrsAnalise4("/ld_rms/scan3");
 
   polygonPub = np.advertise<polygonS>("merged_polygon",1000);
+
   vector<string> topicName;
   topicName.push_back("/lms151_D_scan_PCL");
   topicName.push_back("/lms151_E_scan_PCL");
@@ -486,16 +410,42 @@ int main(int argc, char **argv)
   topicName.push_back("/ld_rms/scan1_PCL");
   topicName.push_back("/ld_rms/scan2_PCL");
   topicName.push_back("/ld_rms/scan3_PCL");
+  vector<string> frame_Ids;
+  frame_Ids.push_back("lms151_E");
+  frame_Ids.push_back("lms151_D");
+  frame_Ids.push_back("/ldmrs0");
+  frame_Ids.push_back("/ldmrs1");
+  frame_Ids.push_back("/ldmrs2");
+  frame_Ids.push_back("/ldmrs3");
 
-  //pointClouldFusion mergedPclHandler(topicName);
+  pointClouldFusion getPcls(topicName,frame_Ids);
 
+  Rate  loopRate(50);
   while(ros::ok()){
-//    pclPtr mergedPcl = mergedPclHandler.getAllPcl();
-//    polygonSPtr polygon = laserDataAnalise::getScanPolygon(mergedPcl);
+    if(getPcls.newData){
+      vector< pcl2Ptr > allPcl2 = getPcls.getAllPcl();
 
-//    /*---Publisher for the Polygon---*/
-//    polygonPub.publish(*polygon);
+      vector< PCL > allPcl;
+      for(int i = 0; i<allPcl2.size();i++){
+        pcl::PointCloud<pcl::PointXYZ> cloud;
+        pcl::fromROSMsg(*allPcl2[i], cloud);
+        pclPtr cloud_Ptr(&cloud);
+//        transformPCL(listener, frame_Ids[i], "/map", cloud_Ptr);
 
+        allPcl.push_back(cloud);
+      }
+
+
+
+      PCL mergedPcl = allPcl[0]+allPcl[1];
+//      pclPtr mergedPcl_Ptr  = boost::make_shared< PCL >(mergedPcl);
+//      polygonSPtr polygon = laserDataAnalise::getScanPolygon(mergedPcl_Ptr);
+
+//      /*---Publisher for the Polygon---*/
+//      polygonPub.publish(*polygon);
+
+      getPcls.newData = false;
+    }
     ros::spinOnce();
     loopRate.sleep();
   }

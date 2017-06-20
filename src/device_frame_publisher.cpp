@@ -233,8 +233,8 @@ int main(int argc, char **argv)
 //  deviceNames.push_back("ldmrs3");
   tf::Transform LD_tf = deviceFrames[deviceFrames.size()-1]*getTf(0, 0, 0, 0, -1.6, 0);
 
-//  deviceFrames.push_back(getTf(0, 0, 0, 0, 0, 0));
-//  deviceNames.push_back("lms151_E");
+//  deviceFrames.push_back(getTf(0, 0, 0.5, 0, 0, 0));
+//  deviceNames.push_back("velodyne");
 
 //  for(int i = 0; i < deviceNames.size();i++){
 //    if(deviceNames[i]=="ldmrs0")
@@ -246,10 +246,10 @@ int main(int argc, char **argv)
     ref_sensor = "lms151_E";
   }
 
-
   ros::Rate loop_rate(50);
   while(ros::ok()){
     br.sendTransform(tf::StampedTransform(LD_tf.inverse(), ros::Time::now(),"map",ref_sensor));
+    br.sendTransform(tf::StampedTransform(getTf(0, 0, 0.5, 0, 0, 0), ros::Time::now(),"velodyne","map"));
     for(int i = 0; i<deviceNames.size(); i++){
       tf::Transform T = deviceFrames[i];//*LD_tf.inverse();
       string name = deviceNames[i];
@@ -260,6 +260,4 @@ int main(int argc, char **argv)
     loop_rate.sleep();
   }
 
-
-  ROS_INFO("Hello world!");
 }
