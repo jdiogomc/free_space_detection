@@ -236,22 +236,19 @@ int main(int argc, char **argv)
 //  deviceFrames.push_back(getTf(0, 0, 0.5, 0, 0, 0));
 //  deviceNames.push_back("velodyne");
 
-//  for(int i = 0; i < deviceNames.size();i++){
-//    if(deviceNames[i]=="ldmrs0")
-//  }
-  string ref_sensor;
-  if(argc > 1){
-    ref_sensor = argv[0];
-  }else{
-    ref_sensor = "lms151_E";
+
+  string ref_sensor = "lms151_D";
+  if(!nh.getParam("ref_sensor",ref_sensor)){
+    ROS_WARN("Param 'ref_sensor' not found!");
   }
+  ROS_INFO("Ref sensor: %s", ref_sensor.c_str());
 
   ros::Rate loop_rate(50);
   while(ros::ok()){
     br.sendTransform(tf::StampedTransform(LD_tf.inverse(), ros::Time::now(),"map",ref_sensor));
-    br.sendTransform(tf::StampedTransform(getTf(0, 0, 0.5, 0, 0, 0), ros::Time::now(),"velodyne","map"));
+    br.sendTransform(tf::StampedTransform(getTf(0, 0, 0.5, 0, 0, 0), ros::Time::now(),"map","velodyne"));
     for(int i = 0; i<deviceNames.size(); i++){
-      tf::Transform T = deviceFrames[i];//*LD_tf.inverse();
+      tf::Transform T = deviceFrames[i];
       string name = deviceNames[i];
       br.sendTransform(tf::StampedTransform(T, ros::Time::now(),ref_sensor,name));
     }

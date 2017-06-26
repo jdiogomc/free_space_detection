@@ -2,18 +2,23 @@
 <!-- -->
 <launch>
   <arg name = "record" default = "false"/>
+
+  <param name = "includeUnav" value="true" type="bool"/>
+  <param name = "IncludeScans" value="110011" type="string"/>
+  <param name = "ref_sensor" value="lms151_D" type="string"/>
+
   <!--Launch the visualization-->
   <node pkg="rviz" type="rviz" name="rviz" args="--display-config $(find free_space_detection)/config/rviz.rviz" required="true"/>
 
-  <!--Launch the visualization-->
-  <node pkg="free_space_detection" type="free_space_detection_node" name="free_space_detection" required="true"/>
+  <!--Launch the node-->
+  <node pkg="free_space_detection" type="free_space_detection_node" name="free_space_detection" required="true" output="screen"/>
 
-  <!--Launch the visualization-->
-  <node pkg="free_space_detection" type="device_frame_publisher_node" name="device_frame_publisher" required="true"/>
+  <!--Launch the tf publisher-->
+  <node pkg="free_space_detection" type="device_frame_publisher_node" name="device_frame_publisher" required="true" output="screen"/>
 
   <!--Launch the recorder-->
   <node name="rosbag_record" pkg="rosbag" type="record" output="screen" if="$(arg record)" args=" /ld_rms/scan0 /ld_rms/scan1  /ld_rms/scan2 /ld_rms/scan3 /lms151_D_scan /lms151_E_scan /camera/image_color -o $(find free_space_detection)/laserData/"/>
 
   <!--Launch the robot model-->
-  <include file="$(find free_space_detection)/launch/robotmodel.launch"/>
+  <include file="$(find free_space_detection)/launch/robotmodel.launch" output="log"/>
 </launch>

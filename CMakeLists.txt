@@ -15,7 +15,10 @@ find_package(catkin REQUIRED
 	calibration_gui
 	colormap
         pcl_ros
-        velodyne_pointcloud)
+        velodyne_pointcloud
+        tf_conversions)
+find_package(cmake_modules)
+find_package(Eigen REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -109,7 +112,7 @@ catkin_package(
  INCLUDE_DIRS include
 #  LIBRARIES free_space_detection
   CATKIN_DEPENDS roscpp rospy std_msgs message_runtime colormap pcl_ros velodyne_pointcloud calibration_gui
-#  DEPENDS system_lib
+  DEPENDS Eigen
 )
 
 ###########
@@ -120,6 +123,7 @@ catkin_package(
 ## Your package locations should be listed before other locations
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  ${Eigen_INCLUDE_DIRS}
 )
 
 
@@ -151,6 +155,7 @@ add_executable(${PROJECT_NAME}_node src/free_space_detection.cpp)
 ## Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
+  ${Eigen_LIBRARIES}
 )
 
 add_executable(device_frame_publisher_node src/device_frame_publisher.cpp)

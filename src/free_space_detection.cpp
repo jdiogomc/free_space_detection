@@ -1,5 +1,6 @@
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
+#include <tf_conversions/tf_eigen.h>
 #include <std_msgs/String.h>
 #include <sensor_msgs/LaserScan.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -13,6 +14,7 @@
 #include <sys/stat.h>
 #include <geometry_msgs/PolygonStamped.h>
 #include <geometry_msgs/Polygon.h>
+#include <nav_msgs/OccupancyGrid.h>
 #include <laser_geometry/laser_geometry.h>
 /*---PointCould Includes---*/
 #include <pcl_conversions/pcl_conversions.h>
@@ -21,26 +23,36 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/registration/transformation_estimation_svd.h>
 #include <pcl_ros/point_cloud.h>
+#include <pcl/conversions.h>
+#include <pcl/PCLPointCloud2.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/conditional_removal.h>
+#include <pcl/filters/radius_outlier_removal.h>
+#include <pcl/segmentation/progressive_morphological_filter.h>
+#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/sac_model_sphere.h>
 #include "velodyne_pointcloud/rawdata.h"
 /*---LAR TK4 Includes---*/
 #include "lidar_segmentation/clustering.h"
 #include "lidar_segmentation/lidar_segmentation.h"
 //#include "lidar_segmentation/visualization_rviz.h"
 #include <colormap/colormap.h>
-///*---CGAL Includes---*/
-////#include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
-////#include <CGAL/convex_hull_2.h>
-////#include <CGAL/Polygon_2.h>
-///*---Boost filesystem to get parent directory---*/
-//#include "boost/filesystem.hpp"
-//#include <boost/bind.hpp>
-//#include "boost/filesystem/operations.hpp"
-//#include "boost/filesystem/path.hpp"
-//#include "boost/progress.hpp"
 
 #include "calibration_gui/sick_ldmrs.h"
 #include "calibration_gui/common_functions.h"
 #include "calibration_gui/visualization_rviz_ldmrs.h"
+
+#define RED -125
+#define GREEN 125
+#define BLACK 100
+#define WHITE 0
+#define UNKWON 50
 
 typedef geometry_msgs::PolygonStamped polygonS;
 typedef boost::shared_ptr<polygonS> polygonSPtr;
@@ -64,6 +76,11 @@ int sum(vector<int> array){
   return sum;
 }
 
+double degToRad(double deg){
+  double rad = deg*M_PI/180;
+  return rad;
+}
+
 namespace lidar_data_analise
 {
 
@@ -71,9 +88,10 @@ class laserDataAnalise
 {
 
 public:
-  laserDataAnalise(string topicName) {
+  laserDataAnalise(string topicName, string frame_id) {
 
     this->topicName = topicName;
+    this->frameId = frame_id;
     /*----Susbcribe LaserData Topic----*/
     sub = n.subscribe(topicName,1000, &laserDataAnalise::laserDataTreatment,this);
     ROS_INFO("Topic %s subscribed!",topicName.c_str());
@@ -81,6 +99,8 @@ public:
     clustersPub = np.advertise<visualization_msgs::MarkerArray>("simple_clustering",1000);
     pclPub = np.advertise<PCL2>(topicName+"_PCL",1000);
     polygonPub = np.advertise<polygonS>(topicName+"_polygon",1000);
+
+    scanPcl = pcl2Ptr(new PCL2 );
   }
 
    void convertToXYZ(sensor_msgs::LaserScan scan, vector<PointPtr>& points, double rot)
@@ -123,10 +143,10 @@ public:
      visualization_msgs::Marker marker_ids;
      visualization_msgs::Marker marker_clusters;
 
-     marker_ids.header.frame_id = "lms152_1";//topicName;
+     marker_ids.header.frame_id = frameId;//topicName;
      marker_ids.header.stamp = ros::Time::now();
 
-     marker_clusters.header.frame_id = "lms152_1";//topicName;
+     marker_clusters.header.frame_id = frameId;//topicName;
      marker_clusters.header.stamp = marker_ids.header.stamp;
 
      marker_ids.ns = "ids";
@@ -242,44 +262,82 @@ public:
      return polygon;
    }
 
+   static polygonSPtr getScanPolygon(pclPtr cloud_ptr, string frame_id)
+   {
+     polygonSPtr polygon(new(polygonS));
+     pcl::PointCloud<pcl::PointXYZ> cloud(*cloud_ptr);
+     std_msgs::Header h;
+     h.frame_id = frame_id;
+     polygon->header = h;
+
+//     geometry_msgs::Point32 point;
+//     point.x = 0;
+//     point.y = 0;
+//     point.z = 0;
+//     polygon->polygon.points.push_back(point);
+
+//     pcl::fromROSMsg(*scan, cloud);
+     for(int i = 0; i<cloud.size(); i++){
+       geometry_msgs::Point32 point;
+       pcl::PointXYZ pointPcl;
+       pointPcl = cloud.points.at(i);
+       point.x = pointPcl.x;
+       point.y = pointPcl.y;
+       point.z = 0;//pointPcl.z;
+       polygon->polygon.points.push_back(point);
+     }
+
+     return polygon;
+   }
+
    void laserDataTreatment(sensor_msgs::LaserScan scan)
    {
      scan.header.stamp = ros::Time::now();
-//     vector<PointPtr> laserPoints;
-//     convertToXYZ(scan, laserPoints, 0);
-     pcl2Ptr scanPcl(new(PCL2));
      scanToPcl(scan, scanPcl);
 
      polygonSPtr polygon = getScanPolygon(scanPcl);
-
-//     vector<PointPtr> points_sorted = laserPoints;
-//     sort(points_sorted.begin(),points_sorted.end(),comparePoints);
-
-//     vector<PointPtr> points_filtered;
-//     filterPoints(laserPoints,points_filtered,0.01,50.);
-//     vector<PointPtr> points_filtered_sorted = points_filtered;
-//     sort(points_filtered_sorted.begin(),points_filtered_sorted.end(),comparePoints);
-
-//     vector<ClusterPtr> clusters_1;
-//     double threshold_nn = 0.2;
-//     nnClustering( points_filtered, threshold_nn , clusters_1);
-
-//     vector<PointPtr> laserPoints_clean = laserPoints;
-//     removeInvalidPoints(laserPoints_clean, clusters_1, 3);
-
-//     vector<ClusterPtr> clusters_clean;
-//     clusters_clean = removeSmallClusters(clusters_1,2);
-
-     /*---Publisher for the Clusters---*/
-//     visualization_msgs::MarkerArray clusters_markers;
-//     clusters_markers.markers = createClutersVisualizationMarker(clusters_1);
-//     clustersPub.publish(clusters_markers);
 
      /*---Publisher for the PointCould---*/
      pclPub.publish(*scanPcl);
 
      /*---Publisher for the Polygon---*/
      polygonPub.publish(*polygon);
+   }
+
+   bool getPcl(pcl2Ptr cloud_in_ptr){
+     if(scanPcl->width>0){
+       *cloud_in_ptr = *scanPcl;
+       return true;
+     }
+     return false;
+   }
+
+   void transformPCL(string destFrame,  pclPtr pclIn, pclPtr pclOut){
+
+     tf::StampedTransform transform;
+     string oriFrame = frameId;
+     try{
+       tf_Listener.waitForTransform(destFrame,oriFrame,ros::Time(0),ros::Duration(0.1));
+       tf_Listener.lookupTransform(destFrame,oriFrame,ros::Time(0),transform);
+     }
+     catch (tf::TransformException ex){
+       ROS_ERROR("%s",ex.what());
+     }
+
+     Eigen::Affine3d transform_2 = Eigen::Affine3d::Identity();
+     tf::transformTFToEigen (transform, transform_2);
+
+     pcl::transformPointCloud (*pclIn, *pclOut, transform_2);
+
+   }
+
+   static void transformPCL(tf::Transform transform,  pclPtr pclIn){
+
+     Eigen::Affine3d transform_2 = Eigen::Affine3d::Identity();
+     tf::transformTFToEigen (transform, transform_2);
+
+     pcl::transformPointCloud (*pclIn, *pclIn, transform_2);
+
    }
 
 private:
@@ -290,11 +348,15 @@ private:
   Publisher clustersPub;
   Publisher pclPub;
   Publisher polygonPub;
+
   double rotation;
   string topicName;
+  string frameId;
 
   tf::TransformListener tf_Listener;
   tf::TransformBroadcaster tf_Broadcaster;
+
+  pcl2Ptr scanPcl;
 };
 
 class pointClouldFusion
@@ -306,9 +368,7 @@ public:
     ROS_INFO("%d Topics to subscribe!",nPcl);
     frame_IDs = frame_Ids;
     newData = false;
-//    received.assign(6,0);
-//    pcl2Ptr newPcl(new(PCL));
-//    allPcl.assign(nPcl,newPcl);
+
     for(int i = 0; i<topicName.size(); i++){
       Subscriber sub;
       sub_pc.push_back(sub);
@@ -331,11 +391,6 @@ void getPointCloud(const PCL2::ConstPtr myPcl){
       }
     }
   }
-  if(sum(received) == nPcl){
-    fill(received.begin(), received.end(), 0);
-    newData = true;
-    ROS_INFO("New Set of data Ready");
-  }
 }
 
 vector< pcl2Ptr > getAllPcl(void){
@@ -356,96 +411,810 @@ private:
 
 }
 
+geometry_msgs::Point xyzTortp(geometry_msgs::Point point){
+  double X = point.x;
+  double Y = point.y;
+  double Z = point.z;
 
-void transformPCL(tf::TransformListener listener, string oriFrame, string destFrame, pclPtr pclIn){
+  double radius = sqrt((double)(double)pow(X,2) + (double)pow(Y,2) + (double)pow(Z,2));
+  double theta = atan2(Y, X);
+  double phi = acos((double)(Z / radius));
 
-  tf::StampedTransform transform;
+  if(theta<0)
+    theta += M_PI*2;
 
-  try{
-    listener.waitForTransform(oriFrame,destFrame,ros::Time(0),ros::Duration(0.1));
-    listener.lookupTransform(oriFrame,destFrame,ros::Time(0),transform);
+  geometry_msgs::Point point_s;
+
+  point_s.x = radius;
+  point_s.y = theta;
+  point_s.z = phi;
+
+  return point_s;
+}
+
+
+geometry_msgs::Point rtpToxyz(geometry_msgs::Point point){
+  double radius = point.x;
+  double theta = point.y;
+  double phi = point.z;
+
+  double X = (double)((double)cos(theta) * (double)sin(phi) * (double)radius);
+  double Y = (double)((double)sin(theta) * (double)sin(phi) * (double)radius);
+  double Z = (double)((double)cos(phi) * (double)radius);
+
+  geometry_msgs::Point point_s;
+
+  point_s.x = X;
+  point_s.y = Y;
+  point_s.z = Z;
+
+  return point_s;
+}
+
+bool sortByY(const geometry_msgs::Point &lhs, const geometry_msgs::Point &rhs) { return lhs.y > rhs.y; }
+
+
+void sortPcl(pclPtr in_pcl, pclPtr pclOut){
+  vector<double> points;
+  vector<geometry_msgs::Point> points_g;
+
+  for(int i = 0; i<in_pcl->points.size();i++){
+    geometry_msgs::Point point;
+    point.x = in_pcl->points[i].x;
+    point.y = in_pcl->points[i].y;
+    point.z = in_pcl->points[i].z;
+    geometry_msgs::Point point_s = xyzTortp(point);
+    points_g.push_back(point_s);
+    points.push_back(point_s.y);
   }
-  catch (tf::TransformException ex){
-    ROS_ERROR("%s",ex.what());
+
+  sort(points_g.begin(), points_g.end(), sortByY);
+
+//  cout << "Points sorted:" << endl;
+//  for(int i = 0; i<points_g.size();i++){
+//    cout << points_g[i].x << ", " << points_g[i].y << ", " << points_g[i].z << endl;
+//  }
+//  cout << "END"<<endl;
+
+  pclOut->width  = points.size();
+  pclOut->height = 1;
+  pclOut->points.resize (pclOut->width * pclOut->height);
+
+  for(int i = 0; i<in_pcl->points.size();i++){
+    geometry_msgs::Point point_c = rtpToxyz(points_g[i]);
+    pclOut->points[i].x = point_c.x;
+    pclOut->points[i].y = point_c.y;
+    pclOut->points[i].z = point_c.z;
   }
-
-  Eigen::Affine3f transform_2 = Eigen::Affine3f::Identity();
-
-  // Define a translation of 2.5 meters on the x axis.
-  transform_2.translation() << 2.5, 0.0, 0.0;
-
-  // The same rotation matrix as before; theta radians arround Z axis
-  transform_2.rotate (Eigen::AngleAxisf (M_PI/4, Eigen::Vector3f::UnitZ()));
-
-  // Executing the transformation
-  PCL::Ptr transformed_cloud (new PCL ());
-  PCL::Ptr cloud (new PCL ());
-  pcl::transformPointCloud (*pclIn, *transformed_cloud, transform_2);
 
 }
 
+void azimuteFilter(pclPtr in_pcl, pclPtr pclOut, bool nearest){
+
+  double anglePerc = degToRad(0.6);
+
+  vector<geometry_msgs::Point> points_s;
+
+  for(int i = 0; i<in_pcl->points.size();i++){
+    geometry_msgs::Point point;
+    point.x = in_pcl->points[i].x;
+    point.y = in_pcl->points[i].y;
+    point.z = in_pcl->points[i].z;
+    geometry_msgs::Point point_s = xyzTortp(point);
+    points_s.push_back(point_s);
+  }
+
+  vector<geometry_msgs::Point> points_s_clean;
+  points_s_clean.push_back(points_s[0]);
+  double angle2 = points_s[1].y;
+  for(int i = 1; i<points_s.size(); i++){
+    double angle1 = points_s[i].y; double r1 = points_s[i].x; geometry_msgs::Point point1 = points_s[i];
+    double r2 = points_s_clean.back().x; geometry_msgs::Point point2 = points_s_clean.back();
+    if(abs(angle1-angle2)<=anglePerc){
+      if(nearest){
+        if(r1<r2){
+          points_s_clean.back() = point1;
+        }
+      }else{
+        if(r1>r2){
+          points_s_clean.back() = point1;
+        }
+      }
+    }else{
+      points_s_clean.push_back(point1);
+      angle2 = points_s_clean.back().y;
+//      points_s_clean.push_back(point2);
+    }
+
+    pclOut->width  = points_s_clean.size();
+    pclOut->height = 1;
+    pclOut->points.resize (pclOut->width * pclOut->height);
+
+    for(int i = 0; i<pclOut->points.size();i++){
+      geometry_msgs::Point point_c = rtpToxyz(points_s_clean[i]);
+      pclOut->points[i].x = point_c.x;
+      pclOut->points[i].y = point_c.y;
+      pclOut->points[i].z = point_c.z;
+    }
+  }
+
+//  cout << "Before: " << in_pcl->points.size() << endl;
+//  cout << "After: "<< pclOut->points.size() << endl;
+
+}
+
+void removeGround(pclPtr in_pcl, double angle){
+
+
+}
+
+vector<double> linspace(double min, double max, int n)
+{
+ vector<double> result;
+ // vector iterator
+ int iterator = 0;
+
+for (int i = 0; i <= n-2; i++)
+ {
+ double temp = min + i*(max-min)/(floor((double)n) - 1);
+ result.insert(result.begin() + iterator, temp);
+ iterator += 1;
+ }
+
+//iterator += 1;
+
+result.insert(result.begin() + iterator, max);
+ return result;
+}
+
+
+tf::Transform getTf(double x, double y, double z, double r, double p, double yy){
+
+  tf::Transform t1;
+  t1.setOrigin(tf::Vector3(x,y,z));
+  tf::Quaternion q;
+  q.setRPY(degToRad(r),degToRad(p),degToRad(yy));
+  t1.setRotation(q);
+
+  return t1;
+}
+
+double pointsDist(pcl::PointXYZ center1, pcl::PointXYZ center3){
+
+  double eu_dist, x_dist, y_dist, z_dist;
+  x_dist = center1.x - center3.x;
+  y_dist = center1.y - center3.y;
+  z_dist = center1.z - center3.z;
+  eu_dist = sqrt( pow(x_dist,2) + pow(y_dist,2) + pow(z_dist,2) );
+
+  return eu_dist;
+}
+
+bool hasIdx(vector<int> array, int idx){
+  for(int i = 0; i<array.size();i++){
+    if(array[i]==idx){
+      return true;
+    }
+  }
+  return false;
+}
+
+void euDistSort(pclPtr in_pcl, pclPtr pclOut){
+
+  pclOut->width = in_pcl->width;
+  pclOut->height = in_pcl->height;
+  pclOut->points.resize(pclOut->width * pclOut->height);
+
+  int t_point = 0;
+  vector<int> indices;
+  pclOut->points[0] = in_pcl->points[0];
+  indices.push_back(0);
+  for(int i = 1; i<in_pcl->points.size(); i++){
+    double min_dist = 10000;
+    int idx;
+    for(int j = 0; j<in_pcl->points.size(); j++){
+      if(!hasIdx(indices, j)){
+        double dist = pointsDist(in_pcl->points[t_point], in_pcl->points[j]);
+        if(min_dist>dist){
+          min_dist =  dist;
+          idx = j;
+        }
+      }
+    }
+    t_point = idx;
+    pclOut->points[i] = in_pcl->points[idx];
+    indices.push_back(idx);
+
+  }
+}
+
+void euDistSort2(pclPtr in_pcl, pclPtr pclOut){
+
+  pclOut->width = in_pcl->width;
+  pclOut->height = in_pcl->height;
+  pclOut->points.resize(pclOut->width * pclOut->height);
+
+  int t_point = 0;
+  int p_point = -1;
+  pclOut->points[0] = in_pcl->points[0];
+  for(int i = 1; i<in_pcl->points.size(); i++){
+    double min_dist = 10000;
+    int idx;
+    for(int j = 0; j<in_pcl->points.size(); j++){
+      if(j != t_point && j != p_point){
+        double dist = pointsDist(in_pcl->points[t_point], in_pcl->points[j]);
+        if(min_dist>dist){
+          min_dist =  dist;
+          idx = j;
+        }
+      }
+    }
+    p_point = t_point;
+    t_point = idx;
+    pclOut->points[i] = in_pcl->points[idx];
+  }
+}
+
+class ocupGrid
+{
+public:
+  ocupGrid(string frameId, double xMin, double xMax, double yMin, double yMax, double cellResol) {
+    this->cellResolution = cellResol;
+    this->xMin = xMin; this->yMin = yMin; this->xMax = xMax; this->yMax = yMax;
+    this->xCells = (int) ((xMax-xMin)/cellResolution);
+    this->yCells = (int) ((yMax-yMin)/cellResolution);
+
+    grid = nav_msgs::OccupancyGridPtr(new nav_msgs::OccupancyGrid);
+    initGrid(frameId);
+
+    ocGrid.assign(xCells * yCells,UNKWON);
+
+    gridPub = np.advertise<nav_msgs::OccupancyGrid>("ocupancy_grid",1000);
+  }
+
+  void getGridSize(pclPtr inPcl){
+    for(int i = 0; i<inPcl->points.size();i++){
+      if(xMin > inPcl->points[i].x){
+        xMin = inPcl->points[i].x;
+      }
+      if(xMax < inPcl->points[i].x){
+        xMax = inPcl->points[i].x;
+      }
+      if(yMin > inPcl->points[i].y){
+        yMin = inPcl->points[i].y;
+      }
+      if(yMax < inPcl->points[i].y){
+        yMax = inPcl->points[i].y;
+      }
+    }
+  }
+
+  void updateGrid(double originX, double originY){
+    grid->header.seq++;
+    grid->header.stamp.sec = ros::Time::now().sec;
+    grid->header.stamp.nsec = ros::Time::now().nsec;
+    grid->info.map_load_time = ros::Time::now();
+    grid->info.resolution = cellResolution;
+    grid->info.width = xCells;
+    grid->info.height = yCells;
+    grid->info.origin.position.x = originX;
+    grid->info.origin.position.y = originY;
+    grid->data = ocGrid;
+  }
+
+  void populateMap(pclPtr inPcl, int color){
+    populateMap(inPcl,color, 0.0, 0.0);
+
+//    for(int i = 0; i<inPcl->points.size(); i++){
+
+//      geometry_msgs::Point point;
+//      point.x = inPcl->points[i].x;
+//      point.y = inPcl->points[i].y;
+//      point.z = 0;
+
+//      geometry_msgs::Point point_s = xyzTortp(point);
+
+//      for(double k = 0.2; k<point_s.x; k+=0.2){
+//         geometry_msgs::Point point;
+//         point.x = k;
+//         point.y = point_s.y;
+//         point.z = point_s.z;
+//         geometry_msgs::Point point_c = rtpToxyz(point);
+
+//         double x = point_c.x;
+//         double y = point_c.y;
+
+//         if(x<xMax && x>xMin && y>yMin && y<yMax){
+//           int xCell = (int) ((x-xMin)/cellResolution);
+//           int yCell = (int) ((y-yMin)/cellResolution);
+
+//           int idx = yCell*xCells + xCell;
+//           ocGrid[idx] = color;
+//         }
+//      }
+//    }
+
+//    for(int i = 0; i<inPcl->points.size(); i++){
+//      double x = inPcl->points[i].x;
+//      double y = inPcl->points[i].y;
+
+//      if(x<xMax && x>xMin && y>yMin && y<yMax){
+//        int xCell = (int) ((x-xMin)/cellResolution);
+//        int yCell = (int) ((y-yMin)/cellResolution);
+
+//        int idx = yCell*xCells + xCell;
+//        ocGrid[idx] = 100;
+//      }
+//    }
+
+  //  for(int l = 0; l<yCells; l++){
+  //    bool first = false;
+  //    for(int c = 0; c<xCells; c++){
+  //      int idx = l*xCells+c;
+  //      if(first && ocGrid[idx] == 100)
+  //        first  = false;
+
+  //      if(ocGrid[idx] == 100 && !first)
+  //        first = true;
+
+  //      if(first && ocGrid[idx] != 100){
+  //        ocGrid[idx] = 125;
+  ////        cout << "Painting Green!!" << endl;
+  //      }
+  //    }
+  //  }
+  }
+
+  void populateMap(pclPtr inPcl, int color, double xOrigin, double yOrigin){
+    for(int i = 0; i<inPcl->points.size(); i++){
+
+      geometry_msgs::Point point;
+      point.x = inPcl->points[i].x; double x = point.x; x+=xOrigin;
+      point.y = inPcl->points[i].y; double y = point.y; y+=yOrigin;
+      point.z = 0;
+
+      if(x<xMax && x>xMin && y>yMin && y<yMax){
+        int xCell = (int) ((x-xMin)/cellResolution);
+        int yCell = (int) ((y-yMin)/cellResolution);
+
+        int idx = yCell*xCells + xCell;
+        ocGrid[idx] = 100;
+      }
+
+      geometry_msgs::Point point_s = xyzTortp(point);
+
+      for(double k = 0.2; k<point_s.x; k+=0.2){
+         geometry_msgs::Point point;
+         point.x = k;
+         point.y = point_s.y;
+         point.z = point_s.z;
+         geometry_msgs::Point point_c = rtpToxyz(point);
+
+         double x = point_c.x; x+=xOrigin;
+         double y = point_c.y; y+=yOrigin;
+
+         if(x<xMax && x>xMin && y>yMin && y<yMax){
+           int xCell = (int) ((x-xMin)/cellResolution);
+           int yCell = (int) ((y-yMin)/cellResolution);
+
+           int idx = yCell*xCells + xCell;
+           if(ocGrid[idx]==50)
+            ocGrid[idx] = color;
+         }
+      }
+    }
+  }
+
+  vector<signed char> getGrid(){
+    return ocGrid;
+  }
+
+  void genOcupGrid(vector<int> &countGrid, int xCells, int yCells){
+    for(int i = 0; i< countGrid.size(); i++){
+        ocGrid[i]= countGrid[i];
+    }
+
+    for(int l = 0; l<yCells; l++){
+      bool first = false;
+      for(int c = 0; c<xCells; c++){
+        int idx = l*xCells+c;
+        if(first && ocGrid[idx] == 100)
+          first  = false;
+
+        if(ocGrid[idx] == 100 && !first)
+          first = true;
+
+        if(first && ocGrid[idx] != 100){
+          ocGrid[idx] = 125;
+  //        cout << "Painting Green!!" << endl;
+        }
+      }
+    }
+  }
+
+  void resetGrid(int color){
+    ocGrid.assign(xCells * yCells,color);
+  }
+
+  void assingGrid(vector<signed char> *grid){
+    ocGrid = *grid;
+  }
+
+  void publish(){
+    gridPub.publish(*grid);
+  }
+
+  void setValue(int color, double x, double y, bool override){
+    if(x<xMax && x>xMin && y>yMin && y<yMax){
+      int xCell = (int) ((x-xMin)/cellResolution);
+      int yCell = (int) ((y-yMin)/cellResolution);
+
+      int idx = yCell*xCells + xCell;
+      if(ocGrid[idx]==50 || override)
+       ocGrid[idx] = color;
+    }
+  }
+
+private:
+  nav_msgs::OccupancyGridPtr grid;
+  double cellResolution;
+  double xMin, yMin, xMax, yMax;
+  int xCells;
+  int yCells;
+  vector<signed char> ocGrid;
+  ros::NodeHandle np;
+  ros::Publisher gridPub;
+
+  void initGrid(string frameId){
+    grid->header.seq = 1;
+    grid->header.frame_id = frameId;
+    grid->info.origin.position.z = 0;
+    grid->info.origin.orientation.w = 1;
+    grid->info.origin.orientation.x = 0;
+    grid->info.origin.orientation.y = 0;
+    grid->info.origin.orientation.z = 0;
+  }
+};
+
+
+pcl::PointXYZ createPointAllognLine(pcl::PointXYZ ini_point, pcl::PointXYZ last_point, double dist){
+  double x1 = ini_point.x; double y1 = ini_point.y;
+  double x2 = last_point.x; double y2 = last_point.y;
+
+  double vx = x2 - x1;
+  double vy = y2 - y1;
+  double mag = sqrt(vx*vx + vy*vy);
+
+  vx /= mag;
+  vy /= mag;
+
+  pcl::PointXYZ new_point;
+  new_point.x = ((double)x1 + vx * (dist));
+  new_point.y = ((double)y1 + vy * (dist));
+  new_point.z = 0;
+
+  return new_point;
+}
 
 using namespace lidar_data_analise;
 
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "free_space_detection");
-  Publisher polygonPub;
-  NodeHandle np;
-  tf::TransformListener listener;
 
-  laserDataAnalise lms151EAnalise("/lms151_D_scan");
-  laserDataAnalise lms151DAnalise("/lms151_E_scan");
-  laserDataAnalise ld_mrsAnalise1("/ld_rms/scan0");
-  laserDataAnalise ld_mrsAnalise2("/ld_rms/scan1");
-  laserDataAnalise ld_mrsAnalise3("/ld_rms/scan2");
-  laserDataAnalise ld_mrsAnalise4("/ld_rms/scan3");
+  Publisher polygonPub;
+  Publisher uNavLPolygonPub;
+  Publisher uNavRPolygonPub;
+  Publisher mergedPclPub;
+  Publisher uNavPclPub;
+  Publisher gridPub;
+  NodeHandle np;
+
+  bool includeUnav = true;
+  if(np.getParam("includeUnav",includeUnav)){
+    if(includeUnav){
+      ROS_INFO("Using Nav Area!");
+    }else {
+      ROS_INFO("Not Using Nav Area!");
+    }
+  }else{
+    ROS_WARN("Param 'includeUnav' not found!");
+    ROS_INFO("Using Nav Area!");
+  }
+
+  vector< boost::shared_ptr< laserDataAnalise > > laserDataHandle;
+
+  laserDataAnalise lms151DAnalise("/lms151_D_scan", "lms151_D");
+  laserDataHandle.push_back(boost::shared_ptr< laserDataAnalise >(&lms151DAnalise));
+  laserDataAnalise lms151EAnalise("/lms151_E_scan","lms151_E");
+  laserDataHandle.push_back(boost::shared_ptr< laserDataAnalise >(&lms151EAnalise));
+  laserDataAnalise ld_mrsAnalise1("/ld_rms/scan0","/ldmrs0");
+  laserDataHandle.push_back(boost::shared_ptr< laserDataAnalise >(&ld_mrsAnalise1));
+  laserDataAnalise ld_mrsAnalise2("/ld_rms/scan1","/ldmrs1");
+  laserDataHandle.push_back(boost::shared_ptr< laserDataAnalise >(&ld_mrsAnalise2));
+  laserDataAnalise ld_mrsAnalise3("/ld_rms/scan2","/ldmrs2");
+  laserDataHandle.push_back(boost::shared_ptr< laserDataAnalise >(&ld_mrsAnalise3));
+  laserDataAnalise ld_mrsAnalise4("/ld_rms/scan3","/ldmrs3");
+  laserDataHandle.push_back(boost::shared_ptr< laserDataAnalise >(&ld_mrsAnalise4));
 
   polygonPub = np.advertise<polygonS>("merged_polygon",1000);
+  uNavLPolygonPub = np.advertise<polygonS>("unavl_polygon",1000);
+  uNavRPolygonPub = np.advertise<polygonS>("unavr_polygon",1000);
+  mergedPclPub = np.advertise<PCL2>("merged_pcl",1000);
+  uNavPclPub = np.advertise<PCL2>("unav_pcl",1000);
+  gridPub = np.advertise<nav_msgs::OccupancyGrid>("ocupancy_grid",1000);
 
-  vector<string> topicName;
-  topicName.push_back("/lms151_D_scan_PCL");
-  topicName.push_back("/lms151_E_scan_PCL");
-  topicName.push_back("/ld_rms/scan0_PCL");
-  topicName.push_back("/ld_rms/scan1_PCL");
-  topicName.push_back("/ld_rms/scan2_PCL");
-  topicName.push_back("/ld_rms/scan3_PCL");
-  vector<string> frame_Ids;
-  frame_Ids.push_back("lms151_E");
-  frame_Ids.push_back("lms151_D");
-  frame_Ids.push_back("/ldmrs0");
-  frame_Ids.push_back("/ldmrs1");
-  frame_Ids.push_back("/ldmrs2");
-  frame_Ids.push_back("/ldmrs3");
+  vector<int> include;
+  include.assign(laserDataHandle.size(),1);
+  include[2] = 0; include[3] = 0;
+  string includeScans;
+  if(np.getParam("IncludeScans",includeScans)){
+    if(includeScans.size() == include.size()){
+     for(int i = 0; i< includeScans.size();i++){
+       char a = includeScans[i];
+       include[i] = atoi(&a);
+     }
+    }else{
+      ROS_WARN("Erro in Param 'IncludeScans'");
+    }
+  }else{
+    ROS_WARN("'IncludeScans' Param not found!");
+  }
 
-  pointClouldFusion getPcls(topicName,frame_Ids);
+  if(include[0]==1){
+    ROS_INFO("Merging scans from: Sick LMS Right!");
+  }
+  if(include[1]==1){
+    ROS_INFO("Merging scans from: Sick LMS Left!");
+  }
+  if(include[2]==1){
+    ROS_INFO("Merging scans from: Sick LD-MRS 0!");
+  }
+  if(include[3]==1){
+    ROS_INFO("Merging scans from: Sick LD-MRS 1!");
+  }
+  if(include[4]==1){
+    ROS_INFO("Merging scans from: Sick LD-MRS 2!");
+  }
+  if(include[5]==1){
+    ROS_INFO("Merging scans from: Sick LD-MRS 3!");
+  }
+
+  vector<int> received;
+  received.assign(laserDataHandle.size(),0);
+
+  vector< pclPtr > allPcl;
+  pclPtr myPcl(new PCL);
+  allPcl.assign(laserDataHandle.size(), myPcl);
+
+  pclPtr unavArea_clean(new PCL);
+  pclPtr unavAreaL(new PCL);
+  pclPtr unavAreaL_t(new PCL);
+  pclPtr unavAreaD(new PCL);
+  pclPtr unavAreaD_t(new PCL);
+  pclPtr car(new PCL);
+  if(includeUnav){
+
+    int pointsSize = 500;
+    unavAreaL->width = pointsSize;
+    unavAreaL->height = 1;
+    unavAreaL->points.resize(unavAreaL->width * unavAreaL->height);
+
+    unavAreaD->width = pointsSize;
+    unavAreaD->height = 1;
+    unavAreaD->points.resize(unavAreaL->width * unavAreaL->height);
+
+    vector<double> angle = linspace(0, M_PI*2, pointsSize);
+    double radius = 4.5;
+
+    for(int i = 0; i< pointsSize; i++){
+      double x = radius * cos(angle[i]);
+      double y = radius * sin(angle[i]);
+      if(y>3.95){
+        y = 3.95;
+      }
+
+      unavAreaL->points[i].x = x;
+      unavAreaL->points[i].y = y;
+      unavAreaL->points[i].z = 0;
+      unavAreaD->points[i].x = x;
+      unavAreaD->points[i].y = -y;
+      unavAreaD->points[i].z = 0;
+    }
+
+    pcl::copyPointCloud(*unavAreaL, *unavAreaL_t);
+    pcl::copyPointCloud(*unavAreaD, *unavAreaD_t);
+
+    laserDataAnalise::transformPCL(getTf(-1.5, -(0.65+radius), 0, 0, 0, 0),  unavAreaL_t);
+    laserDataAnalise::transformPCL(getTf(-1.5, 0.65+radius, 0, 0, 0, 0),  unavAreaD_t);
+
+    pclPtr unavArea(new PCL);
+    *unavArea += *unavAreaD_t;
+    *unavArea += *unavAreaL_t;
+
+    pclPtr unavArea_filtered2 (new PCL);
+    // Create the filtering object
+    pcl::VoxelGrid<pcl::PointXYZ> sor;
+    sor.setInputCloud (unavArea);
+    sor.setLeafSize (0.01f, 0.01f, 0.01f);
+    sor.filter(*unavArea_filtered2);
+
+    unavArea_clean = unavArea_filtered2;
+
+    pclPtr unavAreaD_sorted(new PCL);
+    euDistSort2(unavAreaD_t, unavAreaD_sorted);
+    pclPtr unavAreaL_sorted(new PCL);
+    euDistSort2(unavAreaL_t, unavAreaL_sorted);
+
+    vector<double> side = linspace(0.2, -3.275, 100);
+    vector<double> front = linspace(-0.85, 0.85, 50);
+
+    car->width = 100*2+50*2;
+    car->height = 1;
+    car->points.resize(car->width * car->height);
+    int count = 0;
+    for(int i = 0; i< side.size(); i++){
+      car->points[count].x = side[i];
+      car->points[count].y = 0.85;
+      car->points[count].z = 0;
+      count++;
+    }
+    for(int i = 0; i< front.size(); i++){
+      car->points[count].x = 0.2;
+      car->points[count].y = front[i];
+      car->points[count].z = 0;
+      count++;
+    }
+    for(int i = 0; i< side.size(); i++){
+      car->points[count].x = side[i];
+      car->points[count].y = -0.85;
+      car->points[count].z = 0;
+      count++;
+    }
+    for(int i = 0; i< front.size(); i++){
+      car->points[count].x = -3.275;
+      car->points[count].y = front[i];
+      car->points[count].z = 0;
+      count++;
+    }
+
+  }
+
+
+  double cellResolution = 0.2;
+  double xMin = -50; double yMin = -50; double xMax = 50, yMax = 50;
+
+  ocupGrid ocGrid("/map",xMin,xMax,yMin,yMax,cellResolution);
+
+  ocGrid.populateMap(unavAreaL,RED,-1.55,-5.15);
+  ocGrid.populateMap(unavAreaD,RED,-1.55,5.15);
+  ocGrid.populateMap(car,WHITE);
+  ocGrid.setValue(RED,-1.5,-5.15,false);
+  ocGrid.setValue(RED,-1.5,5.15,false);
+
+  vector<signed char> map = ocGrid.getGrid();
 
   Rate  loopRate(50);
   while(ros::ok()){
-    if(getPcls.newData){
-      vector< pcl2Ptr > allPcl2 = getPcls.getAllPcl();
 
-      vector< PCL > allPcl;
-      for(int i = 0; i<allPcl2.size();i++){
-        pcl::PointCloud<pcl::PointXYZ> cloud;
-        pcl::fromROSMsg(*allPcl2[i], cloud);
-        pclPtr cloud_Ptr(&cloud);
-//        transformPCL(listener, frame_Ids[i], "/map", cloud_Ptr);
+    for(int i = 0; i<laserDataHandle.size();i++){
+      pcl2Ptr cloud_in_ptr(new PCL2);
+      bool newData = laserDataHandle[i]->getPcl(cloud_in_ptr);
 
-        allPcl.push_back(cloud);
+      if(newData){
+        pclPtr cloud(new PCL);
+        pcl::fromROSMsg(*cloud_in_ptr, *cloud);
+        if(cloud->width>0){
+          pclPtr cloud_trans(new PCL);
+          laserDataHandle[i]->transformPCL("/map",cloud,cloud_trans);
+
+          allPcl[i]=cloud_trans;
+          received[i] = 1;
+        }
+      }
+    }
+
+    pclPtr ldPcl(new PCL);
+    pclPtr mergedPcl(new PCL);
+    pclPtr mergedPcl_clean(new PCL);
+
+    for(int i = 2; i<6; i++){
+      if(received[i] == 1 && include[i] == 1){
+        pclPtr pcl = allPcl[i];
+        *ldPcl += *pcl;
+      }
+    }
+
+    if(ldPcl->points.size()>0){
+      removeGround(ldPcl, 0);
+      *mergedPcl += *ldPcl;
+    }
+
+    for(int i = 0; i<2; i++){
+      if(received[i] == 1 && include[i] == 1){
+        received[i] = 0;
+        pclPtr pcl = allPcl[i];
+        *mergedPcl += *pcl;
+      }
+    }
+
+    if(unavArea_clean->points.size()>0){
+      PCL2 mergedPcl2;
+      pcl::toROSMsg(*unavArea_clean,mergedPcl2);
+      mergedPcl2.header.frame_id = "/map";
+      uNavPclPub.publish(mergedPcl2);
+
+      polygonSPtr polygonD = laserDataAnalise::getScanPolygon(unavAreaD_t,"/map");
+      polygonSPtr polygonL = laserDataAnalise::getScanPolygon(unavAreaL_t,"/map");
+
+      /*---Publisher for the Polygon---*/
+      uNavRPolygonPub.publish(*polygonD);
+      uNavLPolygonPub.publish(*polygonL);
+    }
+
+
+    if(mergedPcl->points.size()>0){
+
+      pclPtr mergedPcl_sorted(new PCL);
+      sortPcl(mergedPcl, mergedPcl_sorted);
+
+      // Build the condition
+      pcl::ConditionOr<pcl::PointXYZ>::Ptr range_and1 (new pcl::ConditionOr<pcl::PointXYZ> ());
+      range_and1->addComparison (pcl::FieldComparison<pcl::PointXYZ>::Ptr (new pcl::FieldComparison<pcl::PointXYZ>("y", pcl::ComparisonOps::GT, 0.9)));
+      range_and1->addComparison (pcl::FieldComparison<pcl::PointXYZ>::Ptr (new pcl::FieldComparison<pcl::PointXYZ>("y", pcl::ComparisonOps::LT, -0.9)));
+      range_and1->addComparison (pcl::FieldComparison<pcl::PointXYZ>::Ptr (new pcl::FieldComparison<pcl::PointXYZ>("x", pcl::ComparisonOps::LT, -3.5)));
+      range_and1->addComparison (pcl::FieldComparison<pcl::PointXYZ>::Ptr (new pcl::FieldComparison<pcl::PointXYZ>("x", pcl::ComparisonOps::GT, 0.2)));
+
+      pclPtr mergedPcl_filtered (new PCL);
+      // Build the filter
+      pcl::ConditionalRemoval<pcl::PointXYZ> condrem(true);
+      condrem.setCondition (range_and1);
+      condrem.setInputCloud (mergedPcl_sorted);
+      condrem.filter (*mergedPcl_filtered);
+
+      azimuteFilter(mergedPcl_filtered, mergedPcl_clean, true );
+    }
+
+    if(mergedPcl_clean->points.size()>0){
+      pclPtr polyPcl(new PCL);
+      for(int i = 0; i<mergedPcl_clean->points.size(); i++){
+        pcl::PointXYZ point1 = mergedPcl_clean->points[i]; point1.z = 0;
+        pcl::PointXYZ point2;
+        if(i<mergedPcl_clean->points.size()-1){
+          point2 = mergedPcl_clean->points[i+1]; point2.z = 0;
+        }else{
+          point2 = mergedPcl_clean->points[0]; point2.z = 0;
+        }
+        polyPcl->points.push_back(point1);
+        double lenght = pointsDist(point1, point2);
+        for(double k = 0.2; k<lenght; k+=0.2){
+          pcl::PointXYZ point  = createPointAllognLine(point1,point2, k);
+          polyPcl->points.push_back(point);
+        }
       }
 
+      polygonSPtr polygon = laserDataAnalise::getScanPolygon(mergedPcl_clean,"/map");
 
+      /*---Publisher for the Polygon---*/
+      polygonPub.publish(*polygon);
 
-      PCL mergedPcl = allPcl[0]+allPcl[1];
-//      pclPtr mergedPcl_Ptr  = boost::make_shared< PCL >(mergedPcl);
-//      polygonSPtr polygon = laserDataAnalise::getScanPolygon(mergedPcl_Ptr);
+      PCL2 mergedPcl2;
+      pcl::toROSMsg(*polyPcl,mergedPcl2);
+      mergedPcl2.header.frame_id = "/map";
+      mergedPclPub.publish(mergedPcl2);
 
-//      /*---Publisher for the Polygon---*/
-//      polygonPub.publish(*polygon);
+      ocGrid.assingGrid(&map);
+      ocGrid.populateMap(polyPcl,GREEN);
 
-      getPcls.newData = false;
+      double originX = xMin;
+      double originY = yMin;
+      ocGrid.updateGrid(originX,originY);
+
+      ocGrid.publish();
     }
+
+
+
     ros::spinOnce();
     loopRate.sleep();
   }
