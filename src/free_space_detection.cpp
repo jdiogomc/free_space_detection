@@ -1,72 +1,39 @@
-#include <ros/ros.h>
-#include <tf/transform_listener.h>
-#include <tf_conversions/tf_eigen.h>
-#include <std_msgs/String.h>
-#include <sensor_msgs/LaserScan.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <vector>
-#include <stdio.h>
-#include <string>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <ctime>
-#include <sys/stat.h>
-#include <geometry_msgs/PolygonStamped.h>
-#include <geometry_msgs/Polygon.h>
-#include <nav_msgs/OccupancyGrid.h>
-#include <laser_geometry/laser_geometry.h>
-/*---PointCould Includes---*/
-#include <pcl_conversions/pcl_conversions.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/io/pcd_io.h>
-#include <pcl/registration/transformation_estimation_svd.h>
-#include <pcl_ros/point_cloud.h>
-#include <pcl/conversions.h>
-#include <pcl/PCLPointCloud2.h>
-#include <pcl/segmentation/sac_segmentation.h>
-#include <pcl/sample_consensus/method_types.h>
-#include <pcl/sample_consensus/model_types.h>
-#include <pcl/features/normal_3d.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/filters/extract_indices.h>
-#include <pcl/filters/passthrough.h>
-#include <pcl/filters/conditional_removal.h>
-#include <pcl/filters/radius_outlier_removal.h>
-#include <pcl/segmentation/progressive_morphological_filter.h>
-#include <pcl/sample_consensus/ransac.h>
-#include <pcl/sample_consensus/sac_model_sphere.h>
-#include "velodyne_pointcloud/rawdata.h"
-/*---LAR TK4 Includes---*/
-#include "lidar_segmentation/clustering.h"
-#include "lidar_segmentation/lidar_segmentation.h"
-//#include "lidar_segmentation/visualization_rviz.h"
-#include <colormap/colormap.h>
+/**************************************************************************************************
+   Software License Agreement (BSD License)
 
-#include "calibration_gui/sick_ldmrs.h"
-#include "calibration_gui/common_functions.h"
-#include "calibration_gui/visualization_rviz_ldmrs.h"
+   Copyright (c) 2014-2015, LAR toolkit developers - University of Aveiro - http://lars.mec.ua.pt
+   All rights reserved.
 
-#define RED -125
-#define GREEN 125
-#define BLACK 100
-#define WHITE 0
-#define UNKWON 50
+   Redistribution and use in source and binary forms, with or without modification, are permitted
+   provided that the following conditions are met:
 
-typedef geometry_msgs::PolygonStamped polygonS;
-typedef boost::shared_ptr<polygonS> polygonSPtr;
+ * Redistributions of source code must retain the above copyright notice, this list of
+   conditions and the following disclaimer.
+ * Redistributions in binary form must reproduce the above copyright notice, this list of
+   conditions and the following disclaimer in the documentation and/or other materials provided
+   with the distribution.
+ * Neither the name of the University of Aveiro nor the names of its contributors may be used to
+   endorse or promote products derived from this software without specific prior written permission.
 
-//typedef sensor_msgs::PointCloud2::Ptr pclPtr;
-typedef sensor_msgs::PointCloud2 PCL2;
-typedef boost::shared_ptr< PCL2 > pcl2Ptr;
+   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+   IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+   FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+   CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+   IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
+   OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ ***************************************************************************************************/
+/**
+   \file  free_space_detection.cpp
+   \brief Algorithm for subscribing to lidar data and compute the free space
+   \author Diogo Correia
+   \date   June, 2017
+ */
 
-typedef pcl::PointCloud<pcl::PointXYZ> PCL;
-typedef boost::shared_ptr< PCL > pclPtr;
 
-using namespace ros;
-using namespace std;
-using namespace velodyne_rawdata;
+#include "free_space_detection/free_space_detection.h"
+
 
 int sum(vector<int> array){
   int sum = 0;
@@ -312,7 +279,8 @@ public:
      return false;
    }
 
-   void transformPCL(string destFrame,  pclPtr pclIn, pclPtr pclOut){
+   void transformPCL(string destFrame,  pclPtr pclIn, pclPtr pclOut)
+   {
 
      tf::StampedTransform transform;
      string oriFrame = frameId;
@@ -331,7 +299,8 @@ public:
 
    }
 
-   static void transformPCL(tf::Transform transform,  pclPtr pclIn){
+   static void transformPCL(tf::Transform transform,  pclPtr pclIn)
+   {
 
      Eigen::Affine3d transform_2 = Eigen::Affine3d::Identity();
      tf::transformTFToEigen (transform, transform_2);
@@ -454,7 +423,8 @@ geometry_msgs::Point rtpToxyz(geometry_msgs::Point point){
 bool sortByY(const geometry_msgs::Point &lhs, const geometry_msgs::Point &rhs) { return lhs.y > rhs.y; }
 
 
-void sortPcl(pclPtr in_pcl, pclPtr pclOut){
+void sortPcl(pclPtr in_pcl, pclPtr pclOut)
+{
   vector<double> points;
   vector<geometry_msgs::Point> points_g;
 
@@ -543,7 +513,8 @@ void azimuteFilter(pclPtr in_pcl, pclPtr pclOut, bool nearest){
 
 }
 
-void removeGround(pclPtr in_pcl, double angle){
+void removeGround(pclPtr in_pcl, double angle)
+{
 
 
 }
@@ -798,8 +769,11 @@ public:
            int yCell = (int) ((y-yMin)/cellResolution);
 
            int idx = yCell*xCells + xCell;
-           if(ocGrid[idx]==50)
+           if(ocGrid[idx]==UNKWON){
             ocGrid[idx] = color;
+           }else if(ocGrid[idx] == RED && color != RED){
+             ocGrid[idx] = YELLOW;
+           }
          }
       }
     }

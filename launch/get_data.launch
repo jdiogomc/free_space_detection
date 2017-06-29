@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!-- -->
 <launch>
-  <arg name = "record" default = "true"/>
+  <arg name = "record" default = "false"/>
   <!--Launch the drivers-->
   <include file="$(find free_space_detection)/launch/drivers.launch">
     <arg name="VLP16" value="true" />

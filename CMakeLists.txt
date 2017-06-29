@@ -124,6 +124,7 @@ catkin_package(
 include_directories(
   ${catkin_INCLUDE_DIRS}
   ${Eigen_INCLUDE_DIRS}
+  include
 )
 
 
