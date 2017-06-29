@@ -79,10 +79,6 @@
 #include "lidar_segmentation/lidar_segmentation.h"
 #include <colormap/colormap.h>
 
-#include "calibration_gui/sick_ldmrs.h"
-#include "calibration_gui/common_functions.h"
-#include "calibration_gui/visualization_rviz_ldmrs.h"
-
 
 /*---DEFINES---*/
 #define RED -125
@@ -104,6 +100,74 @@ typedef boost::shared_ptr< PCL > pclPtr;
 using namespace ros;
 using namespace std;
 using namespace velodyne_rawdata;
+
+class LidarClusters
+{
+public:
+    vector<ClusterPtr> Clusters;
+};
+
+typedef boost::shared_ptr<LidarClusters> LidarClustersPtr;
+
+/**
+ * \class Markers
+ * Class to handle the visualization markers
+ * \author Jorge Almeida in mtt
+ *
+ */
+
+class Markers
+{
+    public:
+        void update(visualization_msgs::Marker& marker)
+        {
+            for(uint i=0;i<markers.size();++i)
+                if(markers[i].ns==marker.ns && markers[i].id==marker.id)//Marker found
+                {
+                    markers.erase(markers.begin()+i);
+                    break;
+                }
+
+            markers.push_back(marker);
+        }
+
+        void decrement(void)
+        {
+            for(uint i=0;i<markers.size();++i)
+            {
+                switch(markers[i].action)
+                {
+                    case visualization_msgs::Marker::ADD:
+                        markers[i].action = visualization_msgs::Marker::DELETE;
+                        break;
+                    case visualization_msgs::Marker::DELETE:
+                        markers[i].action = -1;
+                        break;
+                }
+            }
+        }
+
+        void clean(void)
+        {
+            vector<visualization_msgs::Marker> new_markers;
+
+            for(uint i=0;i<markers.size();++i)
+                if(markers[i].action!=-1)
+                    new_markers.push_back(markers[i]);
+
+            markers=new_markers;
+        }
+
+        vector<visualization_msgs::Marker> getOutgoingMarkers(void)
+        {
+            vector<visualization_msgs::Marker> m_out(markers);
+            return markers;
+        }
+
+    private:
+
+        vector<visualization_msgs::Marker> markers;
+};
 
 /*---Prototipos---*/
 int sum(vector<int> array);
