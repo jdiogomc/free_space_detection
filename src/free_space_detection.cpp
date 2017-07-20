@@ -259,7 +259,7 @@ public:
 
    void laserDataTreatment(sensor_msgs::LaserScan scan)
    {
-     scan.header.stamp = ros::Time::now();
+     //scan.header.stamp = ros::Time::now();
      scanToPcl(scan, scanPcl);
 
      polygonSPtr polygon = getScanPolygon(scanPcl);
