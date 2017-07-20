@@ -217,25 +217,15 @@ int main(int argc, char **argv)
   vector<string> deviceNames;
   readCalibrationFiles("/home/diogo/catkin_ws/src/free_space_detection/calibration_data",
                        deviceFrames, deviceNames);
-  //deviceNames[0] = "/lms152_1";
 
 
-//  deviceFrames.push_back(getTf(0, 0, 0, 0, -1.6, 0));
-//  deviceFrames.push_back(getTf(0, 0, 0, 0, -0.8, 0));
-//  deviceFrames.push_back(getTf(0, 0, 0, 0, 0.8, 0));
-//  deviceFrames.push_back(getTf(0, 0, 0, 0, 1.6, 0));
-
-//  deviceNames.push_back("ldmrs0");
-//  deviceNames.push_back("ldmrs1");
-//  deviceNames.push_back("ldmrs2");
-//  deviceNames.push_back("ldmrs3");
   tf::Transform LD_tf = deviceFrames[deviceFrames.size()-1]*getTf(0, 0, 0, 0, -1.6, 0);
 
 //  deviceFrames.push_back(getTf(0, 0, 0.5, 0, 0, 0));
 //  deviceNames.push_back("velodyne");
 
 
-  string ref_sensor = "lms151_D";
+  string ref_sensor = "lms151_E";
   if(!nh.getParam("ref_sensor",ref_sensor)){
     ROS_WARN("Param 'ref_sensor' not found!");
   }
@@ -244,11 +234,16 @@ int main(int argc, char **argv)
   ros::Rate loop_rate(50);
   while(ros::ok()){
     br.sendTransform(tf::StampedTransform(LD_tf.inverse(), ros::Time::now(),"map",ref_sensor));
-    br.sendTransform(tf::StampedTransform(getTf(0, 0, 0.5, 0, 0, 0), ros::Time::now(),"map","velodyne"));
+//    br.sendTransform(tf::StampedTransform(getTf(0, 0, 0.5, 0, 0, 0), ros::Time::now(),"map","velodyne"));
     for(int i = 0; i<deviceNames.size(); i++){
       tf::Transform T = deviceFrames[i];
       string name = deviceNames[i];
-      br.sendTransform(tf::StampedTransform(T, ros::Time::now(),ref_sensor,name));
+      if(name == "velodyne"){
+        br.sendTransform(tf::StampedTransform(T, ros::Time::now(),name,"map"));
+      }else{
+        br.sendTransform(tf::StampedTransform(T, ros::Time::now(),ref_sensor,name));
+      }
+
     }
 
     ros::spinOnce();

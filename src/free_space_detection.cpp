@@ -513,9 +513,22 @@ void azimuteFilter(pclPtr in_pcl, pclPtr pclOut, bool nearest){
 
 }
 
-void removeGround(pclPtr in_pcl, double angle)
+void removeGround(pclPtr in_pcl, double angle, double distance)
 {
 
+  double dist = abs(distance/sin(degToRad(angle)));
+for(int i = 0; i<in_pcl->points.size(); i++){
+  geometry_msgs::Point point;
+  point.x = in_pcl->points[i].x;
+  point.y = in_pcl->points[i].y;
+  point.z = in_pcl->points[i].z;
+  geometry_msgs::Point point_s = xyzTortp(point);
+  double range = point_s.x;
+//  if(abs(range - dist)<=2)
+//  cout << "Range: " << range << endl;
+  if(range > dist-3)
+    in_pcl->points.erase(in_pcl->points.begin() + i);
+}
 
 }
 
@@ -754,7 +767,7 @@ public:
 
       geometry_msgs::Point point_s = xyzTortp(point);
 
-      for(double k = 0.2; k<point_s.x; k+=0.2){
+      for(double k = cellResolution; k<point_s.x; k+=cellResolution){
          geometry_msgs::Point point;
          point.x = k;
          point.y = point_s.y;
@@ -1092,17 +1105,25 @@ int main(int argc, char **argv)
     pclPtr mergedPcl(new PCL);
     pclPtr mergedPcl_clean(new PCL);
 
+
+    int arr[] = {-1.6,-0.8,0.8,1.6};
+    vector<double> angles(arr, arr+4);
+//    angles.insert(angles.end(), { 1, 2, 3, 4, 5, 6 });
     for(int i = 2; i<6; i++){
       if(received[i] == 1 && include[i] == 1){
         pclPtr pcl = allPcl[i];
-        *ldPcl += *pcl;
+        if(i == 2 || i == 3)
+          removeGround(pcl, angles[i-2],285);
+
+        *mergedPcl += *pcl;
+//        *ldPcl += *pcl;
       }
     }
 
-    if(ldPcl->points.size()>0){
-      removeGround(ldPcl, 0);
-      *mergedPcl += *ldPcl;
-    }
+//    if(ldPcl->points.size()>0){
+//      removeGround(ldPcl, 0);
+//      *mergedPcl += *ldPcl;
+//    }
 
     for(int i = 0; i<2; i++){
       if(received[i] == 1 && include[i] == 1){
@@ -1177,14 +1198,14 @@ int main(int argc, char **argv)
       mergedPcl2.header.frame_id = "/map";
       mergedPclPub.publish(mergedPcl2);
 
-      ocGrid.assingGrid(&map);
-      ocGrid.populateMap(polyPcl,GREEN);
+//      ocGrid.assingGrid(&map);
+//      ocGrid.populateMap(polyPcl,GREEN);
 
-      double originX = xMin;
-      double originY = yMin;
-      ocGrid.updateGrid(originX,originY);
+//      double originX = xMin;
+//      double originY = yMin;
+//      ocGrid.updateGrid(originX,originY);
 
-      ocGrid.publish();
+//      ocGrid.publish();
     }
 
 

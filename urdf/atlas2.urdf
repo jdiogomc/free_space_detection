@@ -3,7 +3,7 @@
 <robot name="ATLCASCAR2">
   <link name="map">
     <visual>
-      <origin rpy="1.57 0 1.57" xyz="-3.6 -0.9 -0.3"/>
+      <origin rpy="1.57 0 1.57" xyz="-3.6 -0.93 -0.3"/>
       <geometry>
         <mesh filename="package://free_space_detection/stl_files/atlas2.STL"/>
       </geometry>

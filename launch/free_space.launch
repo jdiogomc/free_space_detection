@@ -5,7 +5,7 @@
 
   <param name = "includeUnav" value="true" type="bool"/>
   <param name = "IncludeScans" value="110011" type="string"/>
-  <param name = "ref_sensor" value="lms151_D" type="string"/>
+  <param name = "ref_sensor" value="lms151_E" type="string"/>
 
   <!--Launch the visualization-->
   <node pkg="rviz" type="rviz" name="rviz" args="--display-config $(find free_space_detection)/config/rviz.rviz" required="true"/>
