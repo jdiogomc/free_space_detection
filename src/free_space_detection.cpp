@@ -34,7 +34,11 @@
 
 #include "free_space_detection/free_space_detection.h"
 
-
+/**
+@brief Sums all the points of an array
+@param[in] Array to sum the values
+@return int The sum of all the elemenets in the array
+*/
 int sum(vector<int> array){
   int sum = 0;
   for(int i = 0; i<array.size();i++){
@@ -43,6 +47,11 @@ int sum(vector<int> array){
   return sum;
 }
 
+/**
+@brief Converts an angle from degrees to radians
+@param[in] Angle in degrees
+@return double Angles in radians
+*/
 double degToRad(double deg){
   double rad = deg*M_PI/180;
   return rad;
@@ -51,6 +60,9 @@ double degToRad(double deg){
 namespace lidar_data_analise
 {
 
+/**
+@brief Class to handle the incoming laser data from the LIDAR sensors
+*/
 class laserDataAnalise
 {
 
@@ -70,6 +82,13 @@ public:
     scanPcl = pcl2Ptr(new PCL2 );
   }
 
+  /**
+  @brief Converts the laser scan point to an array of points
+  @param[in] Laser scan of the laser data
+  @param[out] Array of points to save the converted points
+  @param[in] Angle between the scan plane and the horizontal plane
+  @return void
+  */
    void convertToXYZ(sensor_msgs::LaserScan scan, vector<PointPtr>& points, double rot)
     {
       int s=scan.ranges.size();
@@ -97,7 +116,11 @@ public:
       }
   }
 
-
+   /**
+   @brief Creats visualization markers to display the clusters resultant from the laser scan
+   @param[in] Array of clusters
+   @return vector<visualization_msgs::Marker> Array with the visualization markers
+   */
    vector<visualization_msgs::Marker> createClutersVisualizationMarker(vector<ClusterPtr>& clusters)
    {
      static Markers marker_list;
@@ -180,6 +203,12 @@ public:
       return marker_list.getOutgoingMarkers();
    }
 
+   /**
+   @brief Removes clusters with less than a minimum of points
+   @param[in] Array with all the clusters
+   @param[in] Minimum points to keep the clusters
+   @return vector<ClusterPtr> Array with the clusters after filtering
+   */
    vector<ClusterPtr> removeSmallClusters(vector<ClusterPtr> clusters, int minPoints)
    {
      vector<ClusterPtr> cleanClusters;
@@ -195,13 +224,23 @@ public:
      return cleanClusters;
    }
 
+   /**
+   @brief Converts a LaserScan message to a PointCloud2 message
+   @param[in] LaserScan message with the data
+   @param[out] Point cloud pointer to hold the data
+   @return void
+   */
    void scanToPcl(sensor_msgs::LaserScan scan, pcl2Ptr pclOut)
    {
      laser_geometry::LaserProjection projector;
      projector.transformLaserScanToPointCloud(scan.header.frame_id, scan, *pclOut, tf_Listener);
    }
 
-
+   /**
+   @brief Creates a polygon message from a point cloud
+   @param[in] Pointer for the point cloud data
+   @return polygonSPtr Pointer to the polygon message
+   */
    static polygonSPtr getScanPolygon(pcl2Ptr scan)
    {
      polygonSPtr polygon(new(polygonS));
@@ -229,6 +268,12 @@ public:
      return polygon;
    }
 
+   /**
+   @brief Creates a polygon message from a point cloud
+   @param[in] Pointer for  the point cloud data
+   @param[in] Id of the reference frame for the polygon message
+   @return polygonSPtr Pointer to the polygon message
+   */
    static polygonSPtr getScanPolygon(pclPtr cloud_ptr, string frame_id)
    {
      polygonSPtr polygon(new(polygonS));
@@ -257,6 +302,11 @@ public:
      return polygon;
    }
 
+   /**
+   @brief Callback used to handle the incoming laser data
+   @param[in] Incoming laser scan
+   @return void
+   */
    void laserDataTreatment(sensor_msgs::LaserScan scan)
    {
      //scan.header.stamp = ros::Time::now();
@@ -271,6 +321,11 @@ public:
      polygonPub.publish(*polygon);
    }
 
+   /**
+   @brief Gets the transformation between tow frames and applies it to the points of a point cloud
+   @param[out] Point cloud pointer to assing the points
+   @return bool Returns true if there if data in the scan point cloud
+   */
    bool getPcl(pcl2Ptr cloud_in_ptr){
      if(scanPcl->width>0){
        *cloud_in_ptr = *scanPcl;
@@ -279,6 +334,13 @@ public:
      return false;
    }
 
+   /**
+   @brief Gets the transformation between tow frames and applies it to the points of a point cloud
+   @param[in] Destination frame
+   @param[in] Point cloud to apply the transformation
+   @param[out] Point cloud with the transformation applied
+   @return void
+   */
    void transformPCL(string destFrame,  pclPtr pclIn, pclPtr pclOut)
    {
 
@@ -296,9 +358,14 @@ public:
      tf::transformTFToEigen (transform, transform_2);
 
      pcl::transformPointCloud (*pclIn, *pclOut, transform_2);
-
    }
 
+   /**
+   @brief Aplies a rigid body transformation to the points of a point cloud
+   @param[in] Transformation to apply
+   @param[in] Point cloud to apply the transformation
+   @return geometry_msgs::Point Point in spheric coordinates
+   */
    static void transformPCL(tf::Transform transform,  pclPtr pclIn)
    {
 
@@ -327,59 +394,13 @@ private:
 
   pcl2Ptr scanPcl;
 };
-
-class pointClouldFusion
-{
-public:
-  bool newData;
-  pointClouldFusion(vector<string> topicName, vector<string> frame_Ids) {
-    nPcl = topicName.size();
-    ROS_INFO("%d Topics to subscribe!",nPcl);
-    frame_IDs = frame_Ids;
-    newData = false;
-
-    for(int i = 0; i<topicName.size(); i++){
-      Subscriber sub;
-      sub_pc.push_back(sub);
-      sub_pc[i] = n.subscribe(topicName[i],10, &pointClouldFusion::getPointCloud,this);
-      ROS_INFO("Topic %s subscribed!",topicName[i].c_str());
-      pcl2Ptr newPcl(new(PCL2));;
-      allPcl.push_back(newPcl);
-      received.push_back(0);
-    }
-  }
-
-void getPointCloud(const PCL2::ConstPtr myPcl){
-  string frame_id = myPcl->header.frame_id;
-  if(newData == false){
-    for(int i = 0; i<nPcl;i++){
-      if(frame_IDs[i] == frame_id && received[i] != 1){
-        allPcl[i] = boost::const_pointer_cast< PCL2 >(myPcl);
-        received[i] = 1;
-        ROS_INFO("%s",frame_id.c_str());
-      }
-    }
-  }
 }
 
-vector< pcl2Ptr > getAllPcl(void){
-  return allPcl;
-}
-
-
-private:
-  NodeHandle n;
-  tf::TransformListener tf_listener;
-  vector<Subscriber> sub_pc;
-
-  vector<pcl2Ptr> allPcl;
-  int nPcl;
-  vector<int> received;
-  vector<string> frame_IDs;
-};
-
-}
-
+/**
+@brief Converts a point from cartezian coordinates to spheric coordinates
+@param[in] Point in cartezian coordinates
+@return geometry_msgs::Point Point in spheric coordinates
+*/
 geometry_msgs::Point xyzTortp(geometry_msgs::Point point){
   double X = point.x;
   double Y = point.y;
@@ -401,7 +422,11 @@ geometry_msgs::Point xyzTortp(geometry_msgs::Point point){
   return point_s;
 }
 
-
+/**
+@brief Converts a point from spheric coordinates to cartezian coordinates
+@param[in] Point in spheric coordinates
+@return geometry_msgs::Point Point in cartezian coordinates
+*/
 geometry_msgs::Point rtpToxyz(geometry_msgs::Point point){
   double radius = point.x;
   double theta = point.y;
@@ -420,9 +445,20 @@ geometry_msgs::Point rtpToxyz(geometry_msgs::Point point){
   return point_s;
 }
 
+/**
+@brief Sorting function used to sort the point cloud by the point's second element (the azimute angle)
+@param[in] First point to compare
+@param[in] Second point to compare
+@return bool
+*/
 bool sortByY(const geometry_msgs::Point &lhs, const geometry_msgs::Point &rhs) { return lhs.y > rhs.y; }
 
-
+/**
+@brief Sorts a point cloud points usign a specific sorting function
+@param[in] Point cloud with the points to sort
+@param[out] Point cloud with the sorted points
+@return void
+*/
 void sortPcl(pclPtr in_pcl, pclPtr pclOut)
 {
   vector<double> points;
@@ -456,9 +492,15 @@ void sortPcl(pclPtr in_pcl, pclPtr pclOut)
     pclOut->points[i].y = point_c.y;
     pclOut->points[i].z = point_c.z;
   }
-
 }
 
+/**
+@brief Filters the merged point cloud by the point's azimute angle
+@param[in] Point cloud with the points to filter
+@param[out] Point cloud with the filtered points
+@param[in] Indicates if is to keep the point nearst to the sensor or the farest
+@return void
+*/
 void azimuteFilter(pclPtr in_pcl, pclPtr pclOut, bool nearest){
 
   double anglePerc = degToRad(0.6);
@@ -510,9 +552,16 @@ void azimuteFilter(pclPtr in_pcl, pclPtr pclOut, bool nearest){
 
 //  cout << "Before: " << in_pcl->points.size() << endl;
 //  cout << "After: "<< pclOut->points.size() << endl;
-
 }
 
+
+/**
+@brief Function used to remove the grounf detections from the Sick LD-MRS sensor
+@param[in] Point cloud with the scan data
+@param[in] Angle of the scan plane
+@param[in] Vertical distance from the sensor to the ground
+@return void
+*/
 void removeGround(pclPtr in_pcl, double angle, double distance)
 {
 
@@ -532,6 +581,13 @@ for(int i = 0; i<in_pcl->points.size(); i++){
 
 }
 
+/**
+@brief Creates an array with a specific number of points equaly spaced allong a minimum and a maximum
+@param[in] Array lowest value
+@param[in] Array upper value
+@param[in] Number of points of the array
+@return vector<double>
+*/
 vector<double> linspace(double min, double max, int n)
 {
  vector<double> result;
@@ -551,7 +607,12 @@ result.insert(result.begin() + iterator, max);
  return result;
 }
 
-
+/**
+@brief Sorts the point cloud points by their distance to the closest neighbor
+@param[in] Point cloud to sort
+@param[out] Point cloud sorted
+@return void
+*/
 tf::Transform getTf(double x, double y, double z, double r, double p, double yy){
 
   tf::Transform t1;
@@ -563,6 +624,12 @@ tf::Transform getTf(double x, double y, double z, double r, double p, double yy)
   return t1;
 }
 
+/**
+@brief Calculates the euclidian distance between two points
+@param[in] First point
+@param[out] Second point
+@return double Returns the euclidian distance beteewn the two points
+*/
 double pointsDist(pcl::PointXYZ center1, pcl::PointXYZ center3){
 
   double eu_dist, x_dist, y_dist, z_dist;
@@ -574,6 +641,12 @@ double pointsDist(pcl::PointXYZ center1, pcl::PointXYZ center3){
   return eu_dist;
 }
 
+/**
+@brief Checks if an array contains a value
+@param[in] Array to check for the value
+@param[in] Value to check for
+@return bool Returns true if the array has the value
+*/
 bool hasIdx(vector<int> array, int idx){
   for(int i = 0; i<array.size();i++){
     if(array[i]==idx){
@@ -583,6 +656,12 @@ bool hasIdx(vector<int> array, int idx){
   return false;
 }
 
+/**
+@brief Sorts the point cloud points by their distance to the closest neighbor
+@param[in] Point cloud to sort
+@param[out] Point cloud sorted
+@return void
+*/
 void euDistSort(pclPtr in_pcl, pclPtr pclOut){
 
   pclOut->width = in_pcl->width;
@@ -612,6 +691,12 @@ void euDistSort(pclPtr in_pcl, pclPtr pclOut){
   }
 }
 
+/**
+@brief Sorts the point cloud points by their distance to the closest neighbor
+@param[in] Point cloud to sort
+@param[out] Point cloud sorted
+@return void
+*/
 void euDistSort2(pclPtr in_pcl, pclPtr pclOut){
 
   pclOut->width = in_pcl->width;
@@ -639,6 +724,10 @@ void euDistSort2(pclPtr in_pcl, pclPtr pclOut){
   }
 }
 
+
+/**
+@brief Class containing functions to create and publish an ocupation grid from point cloud data
+*/
 class ocupGrid
 {
 public:
@@ -656,6 +745,11 @@ public:
     gridPub = np.advertise<nav_msgs::OccupancyGrid>("ocupancy_grid",1000);
   }
 
+  /**
+  @brief Assigns assign ocupation grid size acording to a point cloud extreme points
+  @param[in] Ocupation point cloud
+  @return void
+  */
   void getGridSize(pclPtr inPcl){
     for(int i = 0; i<inPcl->points.size();i++){
       if(xMin > inPcl->points[i].x){
@@ -673,6 +767,12 @@ public:
     }
   }
 
+  /**
+  @brief Updates the ocupation grid parameters
+  @param[in] x coordinate of origin of the grid
+  @param[in] y coordinate of origin of the grid
+  @return void
+  */
   void updateGrid(double originX, double originY){
     grid->header.seq++;
     grid->header.stamp.sec = ros::Time::now().sec;
@@ -686,69 +786,24 @@ public:
     grid->data = ocGrid;
   }
 
+  /**
+  @brief Assigns values to the grid's cells according to the ocupation point cloud
+  @param[in] Ocupation point cloud
+  @param[in] Value to assign to the UNKWON cells
+  @return void
+  */
   void populateMap(pclPtr inPcl, int color){
     populateMap(inPcl,color, 0.0, 0.0);
-
-//    for(int i = 0; i<inPcl->points.size(); i++){
-
-//      geometry_msgs::Point point;
-//      point.x = inPcl->points[i].x;
-//      point.y = inPcl->points[i].y;
-//      point.z = 0;
-
-//      geometry_msgs::Point point_s = xyzTortp(point);
-
-//      for(double k = 0.2; k<point_s.x; k+=0.2){
-//         geometry_msgs::Point point;
-//         point.x = k;
-//         point.y = point_s.y;
-//         point.z = point_s.z;
-//         geometry_msgs::Point point_c = rtpToxyz(point);
-
-//         double x = point_c.x;
-//         double y = point_c.y;
-
-//         if(x<xMax && x>xMin && y>yMin && y<yMax){
-//           int xCell = (int) ((x-xMin)/cellResolution);
-//           int yCell = (int) ((y-yMin)/cellResolution);
-
-//           int idx = yCell*xCells + xCell;
-//           ocGrid[idx] = color;
-//         }
-//      }
-//    }
-
-//    for(int i = 0; i<inPcl->points.size(); i++){
-//      double x = inPcl->points[i].x;
-//      double y = inPcl->points[i].y;
-
-//      if(x<xMax && x>xMin && y>yMin && y<yMax){
-//        int xCell = (int) ((x-xMin)/cellResolution);
-//        int yCell = (int) ((y-yMin)/cellResolution);
-
-//        int idx = yCell*xCells + xCell;
-//        ocGrid[idx] = 100;
-//      }
-//    }
-
-  //  for(int l = 0; l<yCells; l++){
-  //    bool first = false;
-  //    for(int c = 0; c<xCells; c++){
-  //      int idx = l*xCells+c;
-  //      if(first && ocGrid[idx] == 100)
-  //        first  = false;
-
-  //      if(ocGrid[idx] == 100 && !first)
-  //        first = true;
-
-  //      if(first && ocGrid[idx] != 100){
-  //        ocGrid[idx] = 125;
-  ////        cout << "Painting Green!!" << endl;
-  //      }
-  //    }
-  //  }
   }
 
+  /**
+  @brief Assigns values to the grid's cells according to the ocupation point cloud
+  @param[in] Ocupation point cloud
+  @param[in] Value to assign to the UNKWON cells
+  @param[in] x coordinate of origin of the point cloud
+  @param[in] y coordinate of origin of the point cloud
+  @return void
+  */
   void populateMap(pclPtr inPcl, int color, double xOrigin, double yOrigin){
     for(int i = 0; i<inPcl->points.size(); i++){
 
@@ -792,45 +847,49 @@ public:
     }
   }
 
+  /**
+  @brief Returns the ocupeation grid matrix
+  @return vector<signed char>
+  */
   vector<signed char> getGrid(){
     return ocGrid;
   }
 
-  void genOcupGrid(vector<int> &countGrid, int xCells, int yCells){
-    for(int i = 0; i< countGrid.size(); i++){
-        ocGrid[i]= countGrid[i];
-    }
 
-    for(int l = 0; l<yCells; l++){
-      bool first = false;
-      for(int c = 0; c<xCells; c++){
-        int idx = l*xCells+c;
-        if(first && ocGrid[idx] == 100)
-          first  = false;
-
-        if(ocGrid[idx] == 100 && !first)
-          first = true;
-
-        if(first && ocGrid[idx] != 100){
-          ocGrid[idx] = 125;
-  //        cout << "Painting Green!!" << endl;
-        }
-      }
-    }
-  }
-
+  /**
+  @brief Resets all the cells to a specific value
+  @param[in] Value to assign to the cells
+  @return void
+  */
   void resetGrid(int color){
     ocGrid.assign(xCells * yCells,color);
   }
 
+  /**
+  @brief Assignes a matrix to the grid setting all the values and size equal to the matrix
+  @param[in] Pointer to the matrix
+  @return void
+  */
   void assingGrid(vector<signed char> *grid){
     ocGrid = *grid;
   }
 
+  /**
+  @brief Publishes the ocupation grid message
+  @return void
+  */
   void publish(){
     gridPub.publish(*grid);
   }
 
+  /**
+  @brief Changes the value of a cell were a given points is in
+  @param[in] Value to assign to the cell
+  @param[in] x coordinate of the point
+  @param[in] y coordinate of the point
+  @param[in] Discard ocupied cells
+  @return void
+  */
   void setValue(int color, double x, double y, bool override){
     if(x<xMax && x>xMin && y>yMin && y<yMax){
       int xCell = (int) ((x-xMin)/cellResolution);
@@ -852,6 +911,11 @@ private:
   ros::NodeHandle np;
   ros::Publisher gridPub;
 
+  /**
+  @brief Initiates the ocupation grid
+  @param[in] Name of the reference frame for the grid
+  @return void
+  */
   void initGrid(string frameId){
     grid->header.seq = 1;
     grid->header.frame_id = frameId;
@@ -863,7 +927,13 @@ private:
   }
 };
 
-
+/**
+@brief Creates a point cloud with a set of points allong a line given two points
+@param[in] Initial point
+@param[in] Final point
+@param[in] Distance between points
+@return pcl::PointXYZ
+*/
 pcl::PointXYZ createPointAllognLine(pcl::PointXYZ ini_point, pcl::PointXYZ last_point, double dist){
   double x1 = ini_point.x; double y1 = ini_point.y;
   double x2 = last_point.x; double y2 = last_point.y;
@@ -883,8 +953,15 @@ pcl::PointXYZ createPointAllognLine(pcl::PointXYZ ini_point, pcl::PointXYZ last_
   return new_point;
 }
 
+
 using namespace lidar_data_analise;
 
+/**
+   @brief Main function to compute the free space
+   @param argc
+   @param argv
+   @return int
+ */
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "free_space_detection");
@@ -1198,23 +1275,19 @@ int main(int argc, char **argv)
       mergedPcl2.header.frame_id = "/map";
       mergedPclPub.publish(mergedPcl2);
 
-//      ocGrid.assingGrid(&map);
-//      ocGrid.populateMap(polyPcl,GREEN);
+      ocGrid.assingGrid(&map);
+      ocGrid.populateMap(polyPcl,GREEN);
 
-//      double originX = xMin;
-//      double originY = yMin;
-//      ocGrid.updateGrid(originX,originY);
+      double originX = xMin;
+      double originY = yMin;
+      ocGrid.updateGrid(originX,originY);
 
-//      ocGrid.publish();
+      ocGrid.publish();
     }
-
-
 
     ros::spinOnce();
     loopRate.sleep();
   }
-
-  //ros::spin();
 
   return 0;
 }

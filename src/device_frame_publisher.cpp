@@ -33,7 +33,13 @@
 
 #include "free_space_detection/device_frame_publisher.h"
 
-
+/**
+@brief Reads the contenst of a folder and lists the names of all the files present
+@param[in] Path with the location of the folder
+@param[out] Array with the path of the all the files inside the folder
+@param[out] Array with the name of the all the files inside the folder
+@return int Return 1 if error 0 if sussecefull
+*/
 int getFilesInDir(const string filesPath, vector<string> &outfiles, vector<string> &filesName)
 {
 
@@ -98,6 +104,11 @@ int getFilesInDir(const string filesPath, vector<string> &outfiles, vector<strin
 }
 
 
+/**
+@brief Gets a rigid body transformation from a file
+@param[in] Path for the file with containing the transformation matrix
+@return Eigen::Matrix4f Returns a rigid body transformation matrix
+*/
 Eigen::Matrix4f getTransformFromFile(string filePath)
 {
 
@@ -128,6 +139,12 @@ Eigen::Matrix4f getTransformFromFile(string filePath)
   return transform;
 }
 
+
+/**
+@brief Converts a rigid body matrix (Eigen::MatrixX4f) to a tf::Transform
+@param[in] Matrix with the rigid body transformation
+@return tf::Transform Returns tf::Transform of a rigid body transformation
+*/
 tf::Transform getTfTransform(Eigen::MatrixX4f trans)
 {
 
@@ -147,11 +164,26 @@ tf::Transform getTfTransform(Eigen::MatrixX4f trans)
   return t1;
 }
 
+/**
+@brief Converts an angle from degrees to radians
+@param[in] Angle in degrees
+@return double Returns an angle in radians
+*/
 double degToRad(double deg){
   double rad = deg*M_PI/180;
   return rad;
 }
 
+/**
+@brief Creates a tf::Transform from information about translation and rotation
+@param[in] Translation allong the x coordinate
+@param[in] Translation allong the y coordinate
+@param[in] Translation allong the z coordinate
+@param[in] Rotation allong the x axis
+@param[in] Rotation allong the y axis
+@param[in] Rotation allong the z axis
+@return tf::Transform Returns tf::Transform of a rigid body transformation
+*/
 tf::Transform getTf(double x, double y, double z, double r, double p, double yy)
 {
 
@@ -164,7 +196,13 @@ tf::Transform getTf(double x, double y, double z, double r, double p, double yy)
   return t1;
 }
 
-
+/**
+@brief Reads the calibration files and returns a tranformation for each file
+@param[in] Path for the folder location
+@param[in] Array to hold the transformation
+@param[in] Array to hold the names of the respetive calibration files
+@return void
+*/
 void readCalibrationFiles(string filesPath, vector<tf::Transform> &deviceFrames, vector<string> &deviceNames)
 {
 
@@ -202,11 +240,14 @@ void readCalibrationFiles(string filesPath, vector<tf::Transform> &deviceFrames,
     deviceFrames.push_back(ld_tf*getTf(0, 0, 0, 0, 1.6, 0));
     //deviceFrames.push_back(ld_tf);
   }
-
-
 }
 
-
+/**
+   @brief Main function to publish the reference frames for each device
+   @param argc
+   @param argv
+   @return int
+ */
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "device_frame_publisher");
