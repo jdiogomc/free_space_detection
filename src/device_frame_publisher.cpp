@@ -254,9 +254,15 @@ int main(int argc, char **argv)
   ros::NodeHandle nh;
   tf::TransformBroadcaster br;
 
+  string calibFilesP;
+  if(!nh.getParam("calibFilesPath",calibFilesP)){
+    calibFilesP = ros::package::getPath("free_space_detection")+"/calibration_data";
+  }
+  ROS_INFO("Calibration Files Path: %s",calibFilesP.c_str());
+
   vector<tf::Transform> deviceFrames;
   vector<string> deviceNames;
-  readCalibrationFiles("/home/diogo/catkin_ws/src/free_space_detection/calibration_data",
+  readCalibrationFiles(calibFilesP.c_str(),
                        deviceFrames, deviceNames);
 
 

@@ -22,5 +22,6 @@
 
   <!--Launch the frame publisher-->
   <node pkg="free_space_detection" type="device_frame_publisher_node" name="device_frame_publisher" required="true"/>
-  <param name = "ref_sensor" value="lms151_E" type="string"/>
+  <param name = "ref_sensor" value="lms151_D" type="string"/>
+  <!--<param name = "calibFilesPath" value="$(find free_space_detection)/calibration_data" type="string"/>-->
 </launch>
